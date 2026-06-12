@@ -89,10 +89,16 @@ export default function App() {
       <section className="form">
         <div className="field">
           <label>토지 주소 (도로명 또는 지번)</label>
-          <div className="lookup-row">
-            <input value={address} onChange={e=>setAddress(e.target.value)} placeholder="예) 경기도 가평군 상면 비룡로 2268-38" onKeyDown={e=>{if(e.key==='Enter')lookup();}} />
-            <button className="run lookup-btn" onClick={lookup} disabled={looking}>{looking?'조회 중…':'토지 조회'}</button>
-          </div>
+          <input
+            className="search-input"
+            value={address}
+            onChange={e=>setAddress(e.target.value)}
+            placeholder="예) 가평군 상면 비룡로 2268-38  또는  가평군 상면 연하리 189"
+            onKeyDown={e=>{if(e.key==='Enter')lookup();}}
+          />
+          <button className="run lookup-btn-full" onClick={lookup} disabled={looking}>
+            {looking?'조회 중…':'토지 조회'}
+          </button>
           {lookupErr && <div className="lookup-err">{lookupErr}</div>}
         </div>
 
