@@ -1,0 +1,296 @@
+:root {
+  --ink: #16241f;
+  --teal: #1f5c4d;
+  --teal-700: #184a3e;
+  --teal-50: #eef5f2;
+  --line: #d9e2de;
+  --muted: #6b7d76;
+  --bg: #f7faf8;
+  --white: #ffffff;
+  --warn: #b83a3a;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root { margin: 0; padding: 0; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Apple SD Gothic Neo',
+    'Malgun Gothic', sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  line-height: 1.55;
+}
+
+.page {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 0 16px 64px;
+}
+
+/* ── Hero ── */
+.hero {
+  padding: 40px 0 24px;
+}
+.brand {
+  font-weight: 800;
+  font-size: 20px;
+  color: var(--teal);
+  letter-spacing: -0.02em;
+}
+.hero h1 {
+  font-size: 30px;
+  line-height: 1.25;
+  margin: 14px 0 10px;
+  letter-spacing: -0.03em;
+}
+.hero .sub {
+  color: var(--muted);
+  font-size: 15px;
+  margin: 0 0 16px;
+}
+.status {
+  display: inline-block;
+  font-size: 12.5px;
+  padding: 5px 11px;
+  border-radius: 999px;
+  font-weight: 600;
+}
+.status.on { background: var(--teal-50); color: var(--teal-700); }
+.status.off { background: #fbf3e8; color: #9a6a1e; }
+
+/* ── Form ── */
+.form {
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 20px;
+  margin-bottom: 16px;
+}
+.field { margin-bottom: 16px; }
+.field:last-child { margin-bottom: 0; }
+.field > label {
+  display: block;
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 7px;
+  color: var(--ink);
+}
+.field .auto {
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--teal);
+  background: var(--teal-50);
+  padding: 1px 7px;
+  border-radius: 999px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+.row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 12px;
+}
+@media (max-width: 520px) {
+  .row { grid-template-columns: 1fr; }
+}
+
+select, input {
+  width: 100%;
+  padding: 11px 12px;
+  font-size: 15px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--white);
+  color: var(--ink);
+  outline: none;
+}
+select:focus, input:focus {
+  border-color: var(--teal);
+  box-shadow: 0 0 0 3px var(--teal-50);
+}
+
+/* ── Lookup row ── */
+.lookup-row {
+  display: flex;
+  gap: 8px;
+}
+.lookup-row input { flex: 1; }
+.lookup-btn {
+  flex: 0 0 auto;
+  width: auto;
+  padding: 11px 18px;
+  margin: 0;
+  white-space: nowrap;
+}
+.lookup-err {
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--warn);
+  background: #fdf1f1;
+  border-radius: 8px;
+  padding: 8px 11px;
+}
+
+/* ── Land card ── */
+.land-card {
+  margin-top: 16px;
+  border: 1px solid var(--teal);
+  background: var(--teal-50);
+  border-radius: 14px;
+  padding: 16px;
+}
+.land-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.land-addr { font-weight: 800; font-size: 16px; color: var(--teal-700); }
+.land-pnu { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.land-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 16px;
+}
+.land-grid > div { display: flex; flex-direction: column; gap: 2px; }
+.land-grid span { font-size: 12px; color: var(--muted); }
+.land-grid strong { font-size: 15px; font-weight: 700; }
+.zone-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.zone-tag {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--white);
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+.zone-tag.primary {
+  background: var(--teal);
+  color: var(--white);
+  border-color: var(--teal);
+  font-weight: 700;
+}
+
+/* ── Chips ── */
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip {
+  font-size: 13.5px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--white);
+  color: var(--ink);
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+.chip:hover { border-color: var(--teal); }
+.chip.active {
+  background: var(--teal);
+  color: var(--white);
+  border-color: var(--teal);
+  font-weight: 700;
+}
+.chip.active.warn {
+  background: var(--warn);
+  border-color: var(--warn);
+}
+.chip.static { cursor: default; }
+.chip.static:hover { border-color: var(--line); }
+
+/* ── Run button ── */
+.run {
+  width: 100%;
+  margin-top: 4px;
+  padding: 14px;
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--white);
+  background: var(--teal);
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+.run:hover { background: var(--teal-700); }
+.run:disabled { opacity: 0.6; cursor: default; }
+
+/* ── Result ── */
+.result {
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 20px;
+}
+.grade-card {
+  text-align: center;
+  padding: 14px 0 18px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 16px;
+}
+.grade-label { font-size: 14px; color: var(--muted); margin-bottom: 6px; }
+.grade { font-size: 30px; font-weight: 800; letter-spacing: -0.02em; }
+.zone-meta { margin-top: 8px; font-size: 13px; color: var(--muted); }
+
+.cost {
+  background: var(--teal-50);
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-size: 14px;
+  color: var(--teal-700);
+  margin-bottom: 16px;
+}
+.cost strong { font-weight: 800; }
+
+.risks h3, .recs h3 {
+  font-size: 14px;
+  margin: 0 0 10px;
+  color: var(--ink);
+}
+.risk {
+  display: flex;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+.risk:last-child { border-bottom: none; }
+.risk .dot {
+  flex: 0 0 auto;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  margin-top: 7px;
+}
+.risk-label { font-weight: 700; font-size: 14px; }
+.risk-note { font-size: 13px; color: var(--muted); margin-top: 2px; }
+
+.recs { margin-top: 18px; }
+
+.disclaimer {
+  margin-top: 18px;
+  font-size: 12px;
+  color: var(--muted);
+  background: var(--bg);
+  border-radius: 8px;
+  padding: 12px;
+  line-height: 1.5;
+}
+
+/* ── Footer ── */
+.foot {
+  margin-top: 28px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.6;
+}
