@@ -165,10 +165,13 @@ function slopeRisks(input: LandInput): RiskItem[] {
 }
 
 /** 규제 신호 → 위험 항목 + 등급 하향 */
-function regulationRisks(input: LandInput): { risks: RiskItem[]; gradeAdj: Grade | null } {
+function regulationRisks(input: LandInput, purpose: Purpose): { risks: RiskItem[]; gradeAdj: Grade | null } {
   const risks: RiskItem[] = [];
   let gradeAdj: Grade | null = null;
   const regs = input.regulations ?? [];
+
+  // 자연보전권역에서 특히 강하게 제한되는 대규모 개발성 목적
+  const HEAVY_DEV: Purpose[] = ['warehouse', 'petfacility', 'camping', 'cafe'];
 
   const HARD = [
     { match: '개발제한', label: '개발제한구역', grade: 'unlikely' as Grade },
@@ -178,11 +181,8 @@ function regulationRisks(input: LandInput): { risks: RiskItem[]; gradeAdj: Grade
     { match: '군사', label: '군사시설보호구역', grade: 'expert' as Grade },
     { match: '문화유산', label: '문화유산 보호구역', grade: 'expert' as Grade },
     { match: '생태', label: '생태·경관보전지역', grade: 'risky' as Grade },
-    // 수도권정비계획법상 권역: 대규모 개발·공장·학교 등 제한.
-    // 소규모 건축에는 영향이 작으므로 전문가 확인 신호로 둔다(일률 하향 아님).
     { match: '자연보전권역', label: '자연보전권역', grade: 'expert' as Grade },
     { match: '성장관리권역', label: '성장관리권역', grade: 'expert' as Grade },
-    // 가축사육제한구역: 축사·동물 관련 시설 직접 제한.
     { match: '가축사육제한', label: '가축사육제한구역', grade: 'expert' as Grade },
   ];
 
@@ -199,6 +199,19 @@ function regulationRisks(input: LandInput): { risks: RiskItem[]; gradeAdj: Grade
       }
     }
   }
+
+  // 자연보전권역 × 대규모 개발성 목적: 권역 특성상 추가 제한이 크다.
+  const inNaturalPreserve = regs.some((r) => r.includes('자연보전권역'));
+  if (inNaturalPreserve && HEAVY_DEV.includes(purpose)) {
+    risks.push({
+      key: 'natpreserve_heavy',
+      label: '자연보전권역 내 대규모 개발 제한',
+      level: 'warning',
+      note: '자연보전권역에서는 일정 규모 이상의 시설·개발이 강하게 제한됩니다. 해당 용도는 규모·업종 요건을 전문가와 면밀히 확인해야 합니다.',
+    });
+    gradeAdj = gradeAdj ? worseGrade(gradeAdj, 'risky') : 'risky';
+  }
+
   return { risks, gradeAdj };
 }
 
@@ -260,6 +273,23 @@ export function diagnose(input: LandInput, purpose: Purpose): DiagnosisResult {
     grade = 'conditional';
   }
 
+  // 1-2) 녹지지역 세분 보정: 도시지역이지만 건폐율 20%로 개발이 제한적이다.
+  //      주거·상업 기준의 urban 등급은 녹지에 과대평가이므로 보수적으로 조정한다.
+  //      보전녹지 > 생산녹지 > 자연녹지 순으로 제한이 강하다.
+  const GREEN_CODES = ['green_conserv', 'green_prod', 'green_nat'];
+  if (zone && GREEN_CODES.includes(zone.code)) {
+    // 개발 강도가 큰 목적은 녹지에서 한 단계 보수적으로
+    const HEAVY: Purpose[] = ['house', 'cafe', 'warehouse', 'petfacility', 'camping'];
+    if (HEAVY.includes(purpose)) {
+      const step: Record<string, Grade> = {
+        green_nat: 'expert',     // 자연녹지: 개발행위허가로 가능 여지 있으나 전문가 확인
+        green_prod: 'risky',     // 생산녹지: 농업 보호 성격, 제한 강함
+        green_conserv: 'risky',  // 보전녹지: 가장 제한적
+      };
+      grade = worseGrade(grade, step[zone.code] ?? 'expert');
+    }
+  }
+
   const riskItems: RiskItem[] = [];
 
   if (zoneUnknown) {
@@ -280,7 +310,7 @@ export function diagnose(input: LandInput, purpose: Purpose): DiagnosisResult {
   riskItems.push(...slopeRisks(input));
 
   // 4) 규제 신호 (가장 강한 하향 요인)
-  const r = regulationRisks(input);
+  const r = regulationRisks(input, purpose);
   riskItems.push(...r.risks);
   if (r.gradeAdj) grade = worseGrade(grade, r.gradeAdj);
 
