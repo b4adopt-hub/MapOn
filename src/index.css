@@ -294,3 +294,23 @@ select:focus, input:focus {
   color: var(--muted);
   line-height: 1.6;
 }
+
+/* ── Land map (Kakao) ── */
+.land-map {
+  margin-top: 16px;
+  width: 100%;
+  height: 320px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+.map-fallback {
+  margin-top: 16px;
+  padding: 24px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--muted);
+  background: var(--bg);
+  border: 1px dashed var(--line);
+  border-radius: 14px;
+}
