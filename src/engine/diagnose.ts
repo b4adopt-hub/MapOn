@@ -178,6 +178,12 @@ function regulationRisks(input: LandInput): { risks: RiskItem[]; gradeAdj: Grade
     { match: '군사', label: '군사시설보호구역', grade: 'expert' as Grade },
     { match: '문화유산', label: '문화유산 보호구역', grade: 'expert' as Grade },
     { match: '생태', label: '생태·경관보전지역', grade: 'risky' as Grade },
+    // 수도권정비계획법상 권역: 대규모 개발·공장·학교 등 제한.
+    // 소규모 건축에는 영향이 작으므로 전문가 확인 신호로 둔다(일률 하향 아님).
+    { match: '자연보전권역', label: '자연보전권역', grade: 'expert' as Grade },
+    { match: '성장관리권역', label: '성장관리권역', grade: 'expert' as Grade },
+    // 가축사육제한구역: 축사·동물 관련 시설 직접 제한.
+    { match: '가축사육제한', label: '가축사육제한구역', grade: 'expert' as Grade },
   ];
 
   for (const reg of regs) {
