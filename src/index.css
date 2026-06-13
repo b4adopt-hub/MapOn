@@ -97,6 +97,7 @@ select:focus, input:focus { border-color: var(--teal); box-shadow: 0 0 0 3px var
 .grade-card { text-align: center; padding: 14px 0 18px; border-bottom: 1px solid var(--line); margin-bottom: 16px; }
 .grade-label { font-size: 14px; color: var(--muted); margin-bottom: 6px; }
 .grade { font-size: 30px; font-weight: 800; letter-spacing: -0.02em; }
+.grade-desc { margin-top: 8px; font-size: 13.5px; color: var(--ink); line-height: 1.5; max-width: 90%; margin-left: auto; margin-right: auto; }
 .zone-meta { margin-top: 8px; font-size: 13px; color: var(--muted); }
 
 .cost { background: var(--teal-50); border-radius: 10px; padding: 12px 14px; font-size: 14px; color: var(--teal-700); margin-bottom: 16px; }
@@ -107,7 +108,7 @@ select:focus, input:focus { border-color: var(--teal); box-shadow: 0 0 0 3px var
 .risk:last-child { border-bottom: none; }
 .risk .dot { flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%; margin-top: 7px; }
 .risk-label { font-weight: 700; font-size: 14px; }
-.risk-note { font-size: 13px; color: var(--muted); margin-top: 2px; }
+.risk-note { font-size: 13px; color: var(--muted); margin-top: 2px; line-height: 1.6; }
 .recs { margin-top: 18px; }
 
 .disclaimer { margin-top: 18px; font-size: 12px; color: var(--muted); background: var(--bg); border-radius: 8px; padding: 12px; line-height: 1.5; }
