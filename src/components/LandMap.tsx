@@ -78,7 +78,7 @@ export default function LandMap({ geom, lat, lng, label }: LandMapProps) {
       level: 3,
     });
 
-    // 경계 폴리곤 그리기
+    // 경계 폴리곤 그리기 (오렌지 — 스카이뷰 위에서 잘 보이도록)
     const rings = extractRings(geom);
     const allPaths = rings.map(ringToLatLng);
     const bounds = new kakao.maps.LatLngBounds();
@@ -86,12 +86,12 @@ export default function LandMap({ geom, lat, lng, label }: LandMapProps) {
     for (const path of allPaths) {
       const polygon = new kakao.maps.Polygon({
         path,
-        strokeWeight: 2.5,
-        strokeColor: '#1f5c4d',
-        strokeOpacity: 0.95,
+        strokeWeight: 3.5,
+        strokeColor: '#ff6b1a',
+        strokeOpacity: 1,
         strokeStyle: 'solid',
-        fillColor: '#1f5c4d',
-        fillOpacity: 0.18,
+        fillColor: '#ff6b1a',
+        fillOpacity: 0.15,
       });
       polygon.setMap(map);
       path.forEach((p: any) => bounds.extend(p));
