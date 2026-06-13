@@ -74,6 +74,13 @@ select:focus, input:focus { border-color: var(--teal); box-shadow: 0 0 0 3px var
 .zone-tag { font-size: 12px; padding: 4px 10px; border-radius: 999px; background: var(--white); border: 1px solid var(--line); color: var(--muted); }
 .zone-tag.primary { background: var(--teal); color: var(--white); border-color: var(--teal); font-weight: 700; }
 
+/* ── 도로 접함(맹지) 상태 줄 ── */
+.road-line { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); font-size: 13px; font-weight: 700; }
+.road-direct_road { color: #1a7f4b; }
+.road-ditch { color: #b8862d; }
+.road-none { color: #c2622d; }
+.road-adj { font-weight: 400; color: var(--muted); }
+
 /* ── Chips ── */
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .chip { font-size: 13.5px; padding: 8px 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--white); color: var(--ink); cursor: pointer; transition: all 0.12s ease; }
