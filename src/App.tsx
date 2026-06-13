@@ -139,7 +139,7 @@ export default function App() {
   return (
     <div className="page">
       <header className="hero">
-        <div className="brand">MapOn</div>
+        <div className="brand">맵땅</div>
         <h1>지번을 넣기 전에, 먼저 살핍니다</h1>
         <p className="sub">주소만 넣으면 용도지역·지목·면적·규제를 자동 조회해 활용 가능성을 등급으로 보여줍니다. 확정 판정이 아닌 사전검토입니다.</p>
         <div className={`status ${supabaseReady?'on':'off'}`}>{supabaseReady?'Supabase 연결됨':'직접 호출 모드 (anon 키 미설정)'}</div>
@@ -281,7 +281,7 @@ export default function App() {
         </section>
       )}
 
-      <footer className="foot">MapOn · 토지 활용 사전검토 플랫폼 · 본 서비스의 경계·등급 정보는 참고용이며 법적 확정 판정이 아닙니다.</footer>
+      <footer className="foot">맵땅 · 토지 활용 사전검토 플랫폼 · 본 서비스의 경계·등급 정보는 참고용이며 법적 확정 판정이 아닙니다.</footer>
     </div>
   );
 }
