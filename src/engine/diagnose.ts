@@ -7,6 +7,9 @@
  * 외부 의존 없음(순수 함수). 공공 API 키 없이 단위 테스트 가능.
  * 데이터가 채워지기 전이라도 부분 입력으로 동작하며, 누락분은
  * "확인 필요" 신호로 처리한다.
+ *
+ * 검토 항목 설명(note)은 일반인 눈높이로 작성: 무엇인지 → 실제로 뭘 막는지
+ * → 어디에 확인하면 되는지. 전문용어는 괄호로 풀어쓴다.
  */
 
 import { matchZone, ZoneInfo } from './zones';
@@ -53,6 +56,8 @@ export interface DiagnosisResult {
   purposeLabel: string;
   grade: Grade;
   gradeLabel: string;
+  /** 등급의 쉬운 한 줄 설명 */
+  gradeDescription: string;
   zone: ZoneInfo | null;
   /** 용도지역 매칭 실패 여부 */
   zoneUnknown: boolean;
@@ -73,6 +78,15 @@ const DISCLAIMER =
   '본 결과는 공공데이터 기반 사전검토이며 법적 확정 판정이 아닙니다. ' +
   '건폐율·용적률·행위제한의 구체 기준과 인허가 가부는 해당 지자체 조례 및 ' +
   '현장 확인에 따라 달라질 수 있습니다.';
+
+/** 등급별 쉬운 한 줄 설명 (일반인 눈높이) */
+const GRADE_DESC: Record<Grade, string> = {
+  high: '큰 걸림돌 없이 가능성이 높아 보입니다. 다만 세부 조건은 확인이 필요합니다.',
+  conditional: '몇 가지 조건만 맞추면 가능해 보입니다. 아래 검토 항목을 확인하세요.',
+  expert: '가능할 수도 있지만 따져볼 게 있습니다. 군청·시청이나 토지 전문가에게 확인하는 게 안전합니다.',
+  risky: '제약이 많아 쉽지 않아 보입니다. 추진 전에 반드시 전문가·지자체 확인이 필요합니다.',
+  unlikely: '현재 조건으로는 어려워 보입니다. 매입 전 가능 여부를 꼭 확인하세요.',
+};
 
 /** 경계 인접 시공이 수반되는 목적(측량 연계 트리거 대상) */
 const SURVEY_PURPOSES: Purpose[] = ['fence', 'house', 'warehouse', 'parking'];
@@ -109,7 +123,7 @@ function jimokRisks(input: LandInput, purpose: Purpose): { risks: RiskItem[]; gr
       key: 'jimok_unknown',
       label: '지목 확인 필요',
       level: 'caution',
-      note: '지목 정보가 확인되지 않았습니다. 토지대장 열람으로 확인이 필요합니다.',
+      note: '이 땅의 지목(논·밭·대지 등 땅의 종류)이 확인되지 않았습니다. 정부 사이트나 토지대장에서 확인할 수 있습니다.',
     });
     return { risks, gradeAdj };
   }
@@ -120,7 +134,7 @@ function jimokRisks(input: LandInput, purpose: Purpose): { risks: RiskItem[]; gr
       key: 'forest_conversion',
       label: '산지전용 검토 필요',
       level: 'warning',
-      note: '임야는 건축·형질변경 시 산지전용허가가 필요할 수 있으며, 보전산지 여부에 따라 제한이 큽니다. 가부는 행정 심사 영역으로 전문가 확인이 필요합니다.',
+      note: '이 땅은 "임야"(산)로 돼 있어, 집이나 건물을 지으려면 산을 개발용으로 바꾸는 "산지전용허가"가 필요합니다. 보호 대상 산이면 허가가 거절될 수 있어, 매입 전에 가능 여부를 꼭 확인하세요.',
     });
     gradeAdj = worseGrade('expert', gradeAdj ?? 'expert');
   }
@@ -130,7 +144,7 @@ function jimokRisks(input: LandInput, purpose: Purpose): { risks: RiskItem[]; gr
       key: 'farm_conversion',
       label: '농지전용 검토 필요',
       level: 'warning',
-      note: '전·답 등 농지는 건축 시 농지전용허가가 필요할 수 있으며, 농업진흥구역이면 제한이 큽니다. 가부는 행정 심사 영역으로 전문가 확인이 필요합니다.',
+      note: '이 땅은 "전(밭)·답(논)" 같은 농지라, 집이나 건물을 지으려면 농지를 다른 용도로 바꾸는 "농지전용허가"가 필요합니다. 농사 보호구역(농업진흥구역)이면 더 어렵습니다. 매입 전 가능 여부를 확인하세요.',
     });
     if (purpose !== 'farmhut') {
       // 농막은 농지 위 설치가 오히려 정합적이므로 하향 폭을 줄임
@@ -151,14 +165,14 @@ function slopeRisks(input: LandInput): RiskItem[] {
       key: 'slope_high',
       label: '급경사 주의',
       level: 'warning',
-      note: `평균 경사가 약 ${s}%로 가파릅니다. 성토·옹벽·배수 공사비가 크게 늘 수 있고, 산지전용 시 경사도 기준에 걸릴 수 있습니다.`,
+      note: `땅 기울기가 약 ${s}%로 꽤 가파릅니다. 평평하게 만드는 흙 작업·옹벽·물 빠짐 공사가 추가로 들어 비용이 크게 늘 수 있고, 너무 가파르면 건축 허가가 안 날 수도 있습니다.`,
     });
   } else if (s >= 15) {
     risks.push({
       key: 'slope_mid',
       label: '경사 검토',
       level: 'caution',
-      note: `평균 경사가 약 ${s}%입니다. 기초·배수 공사 비용 증가 가능성을 검토해야 합니다.`,
+      note: `땅 기울기가 약 ${s}% 정도입니다. 약간 경사가 있어 기초·물 빠짐 공사 비용이 조금 더 들 수 있으니 예산에 감안하세요.`,
     });
   }
   return risks;
@@ -174,16 +188,26 @@ function regulationRisks(input: LandInput, purpose: Purpose): { risks: RiskItem[
   const HEAVY_DEV: Purpose[] = ['warehouse', 'petfacility', 'camping', 'cafe'];
 
   const HARD = [
-    { match: '개발제한', label: '개발제한구역', grade: 'unlikely' as Grade },
-    { match: '농업진흥', label: '농업진흥구역', grade: 'risky' as Grade },
-    { match: '보전산지', label: '보전산지', grade: 'risky' as Grade },
-    { match: '상수원', label: '상수원보호구역', grade: 'unlikely' as Grade },
-    { match: '군사', label: '군사시설보호구역', grade: 'expert' as Grade },
-    { match: '문화유산', label: '문화유산 보호구역', grade: 'expert' as Grade },
-    { match: '생태', label: '생태·경관보전지역', grade: 'risky' as Grade },
-    { match: '자연보전권역', label: '자연보전권역', grade: 'expert' as Grade },
-    { match: '성장관리권역', label: '성장관리권역', grade: 'expert' as Grade },
-    { match: '가축사육제한', label: '가축사육제한구역', grade: 'expert' as Grade },
+    { match: '개발제한', label: '개발제한구역', grade: 'unlikely' as Grade,
+      plain: '이른바 "그린벨트"입니다. 도시가 무분별하게 넓어지는 걸 막으려고 묶어둔 땅이라, 원칙적으로 새 건물을 짓기 매우 어렵습니다. 기존 건물 수선 정도만 가능한 경우가 많습니다.' },
+    { match: '농업진흥', label: '농업진흥구역', grade: 'risky' as Grade,
+      plain: '농사를 보호하려고 지정한 땅(옛 절대농지)입니다. 농사·농업시설 외의 건축은 원칙적으로 막혀 있어, 집이나 상가를 짓기는 매우 까다롭습니다.' },
+    { match: '보전산지', label: '보전산지', grade: 'risky' as Grade,
+      plain: '함부로 개발하지 못하도록 보호하는 산입니다. 건물을 지으려면 "산지전용허가"라는 까다로운 절차가 필요하고, 거절되는 경우도 많습니다.' },
+    { match: '상수원', label: '상수원보호구역', grade: 'unlikely' as Grade,
+      plain: '식수원(상수원)을 깨끗하게 지키려는 구역입니다. 오염을 막기 위해 건축·영업이 강하게 제한돼, 집이나 시설을 새로 짓기 매우 어렵습니다.' },
+    { match: '군사', label: '군사시설보호구역', grade: 'expert' as Grade,
+      plain: '군부대 인근이라 건축 시 군(軍)의 동의가 필요한 땅입니다. 높이·용도에 제한이 붙을 수 있어, 가능 여부를 미리 확인해야 합니다.' },
+    { match: '문화유산', label: '문화유산 보호구역', grade: 'expert' as Grade,
+      plain: '문화재 주변이라 경관·보존을 위해 건축이 제한될 수 있는 땅입니다. 공사 전 별도 심의가 필요할 수 있습니다.' },
+    { match: '생태', label: '생태·경관보전지역', grade: 'risky' as Grade,
+      plain: '자연환경이나 경관을 보호하려는 구역입니다. 개발 행위가 강하게 제한돼, 건축이 어렵거나 까다로운 심사를 거쳐야 합니다.' },
+    { match: '자연보전권역', label: '자연보전권역', grade: 'expert' as Grade,
+      plain: '수도권의 자연·수질을 보호하려고 묶은 넓은 권역입니다. 작은 집 한 채는 가능한 경우가 많지만, 큰 건물·공장·여러 채 개발은 강하게 제한됩니다. 규모가 클수록 어려워진다고 보면 됩니다.' },
+    { match: '성장관리권역', label: '성장관리권역', grade: 'expert' as Grade,
+      plain: '수도권 개발을 계획적으로 관리하는 권역입니다. 일정 규모 이상 개발에 제한이 있어, 짓고자 하는 규모에 따라 확인이 필요합니다.' },
+    { match: '가축사육제한', label: '가축사육제한구역', grade: 'expert' as Grade,
+      plain: '냄새·오염 문제로 가축(개·소·돼지 등) 사육을 제한하는 구역입니다. 동물을 많이 키우는 시설(축사·반려동물 시설 등)은 막히거나 까다로울 수 있습니다. 집을 짓는 것 자체는 보통 영향이 없습니다.' },
   ];
 
   for (const reg of regs) {
@@ -191,9 +215,9 @@ function regulationRisks(input: LandInput, purpose: Purpose): { risks: RiskItem[
       if (reg.includes(h.match)) {
         risks.push({
           key: `reg_${h.match}`,
-          label: `${h.label} 지정`,
+          label: `${h.label}`,
           level: 'warning',
-          note: `${h.label}으로 지정된 토지로 보입니다. 해당 구역은 행위제한이 강하므로 전문가 확인이 필요합니다.`,
+          note: `${h.plain} 정확한 가능 여부는 군청·시청 담당 부서나 토지 전문가(행정사 등)에게 확인하시는 게 안전합니다.`,
         });
         gradeAdj = gradeAdj ? worseGrade(gradeAdj, h.grade) : h.grade;
       }
@@ -205,9 +229,9 @@ function regulationRisks(input: LandInput, purpose: Purpose): { risks: RiskItem[
   if (inNaturalPreserve && HEAVY_DEV.includes(purpose)) {
     risks.push({
       key: 'natpreserve_heavy',
-      label: '자연보전권역 내 대규모 개발 제한',
+      label: '규모가 큰 시설은 특히 주의',
       level: 'warning',
-      note: '자연보전권역에서는 일정 규모 이상의 시설·개발이 강하게 제한됩니다. 해당 용도는 규모·업종 요건을 전문가와 면밀히 확인해야 합니다.',
+      note: '이 땅은 자연보전권역이라, 창고·카페·반려동물 시설·캠핑장처럼 규모가 커지는 용도는 면적·업종 기준에 걸릴 수 있습니다. 작게 시작하는 건 가능해도 크게 짓는 건 제한될 수 있으니, 계획한 규모가 가능한지 지자체에 먼저 문의하세요.',
     });
     gradeAdj = gradeAdj ? worseGrade(gradeAdj, 'risky') : 'risky';
   }
@@ -297,7 +321,7 @@ export function diagnose(input: LandInput, purpose: Purpose): DiagnosisResult {
       key: 'zone_unknown',
       label: '용도지역 확인 필요',
       level: 'caution',
-      note: '용도지역이 자동 매칭되지 않았습니다. 토지이용계획확인서로 확인이 필요합니다.',
+      note: '이 땅의 용도지역(무엇을 지을 수 있는지 정하는 구역)이 자동으로 확인되지 않았습니다. 정부 사이트 "토지이음"(eum.go.kr)에서 주소를 넣어 토지이용계획을 직접 확인해 보세요.',
     });
   }
 
@@ -319,7 +343,7 @@ export function diagnose(input: LandInput, purpose: Purpose): DiagnosisResult {
     key: 'road_access',
     label: '접도 확인 권고',
     level: 'info',
-    note: '진입도로(접도) 확보 여부는 건축 인허가의 핵심입니다. 현황도로·맹지 여부를 현장에서 확인하시기 바랍니다.',
+    note: '땅에 차가 드나들 도로가 붙어 있는지 꼭 확인하세요. 도로가 없는 땅(맹지)은 건축 허가가 안 나는 경우가 많아, 시세보다 싸도 집을 못 지을 수 있습니다. 현장에서 진입로가 실제로 있는지 봐야 합니다.',
   });
 
   // 6) 트리거
@@ -332,7 +356,7 @@ export function diagnose(input: LandInput, purpose: Purpose): DiagnosisResult {
       key: 'survey_notice',
       label: '경계측량 안내',
       level: 'info',
-      note: '경계에 인접한 시공은 정확한 경계 확인이 필요합니다. 본 서비스의 경계 표시는 참고용이며 법적 경계는 지적측량(한국국토정보공사 등)으로만 확정됩니다.',
+      note: '담장·건물을 경계 가까이 지을 계획이면, 실제 땅 경계를 정확히 재는 게 좋습니다. 이 화면의 경계선은 참고용이고, 법적으로 인정되는 경계는 한국국토정보공사(LX)의 지적측량으로만 확정됩니다. 이웃과의 경계 분쟁을 막으려면 미리 측량하세요.',
     });
   }
 
@@ -347,6 +371,7 @@ export function diagnose(input: LandInput, purpose: Purpose): DiagnosisResult {
     purposeLabel: PURPOSE_LABELS[purpose],
     grade,
     gradeLabel: GRADE_LABELS[grade],
+    gradeDescription: GRADE_DESC[grade],
     zone,
     zoneUnknown,
     riskItems,
