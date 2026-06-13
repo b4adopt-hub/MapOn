@@ -146,9 +146,6 @@ export default function App() {
           </svg>
           <span className="brand-text">맵<span className="brand-ddang">땅</span></span>
         </div>
-        <div className="brand-ground" aria-hidden="true">
-          <svg viewBox="0 0 120 12" preserveAspectRatio="none"><path d="M0 8 Q20 2 40 6 T80 5 T120 7 V12 H0 Z" fill="#e6c9a8"/><path d="M0 8 Q20 2 40 6 T80 5 T120 7" stroke="#c89b6e" strokeWidth="1.5" fill="none"/></svg>
-        </div>
         <h1>지번을 넣기 전에, 먼저 살핍니다</h1>
         <p className="sub">주소만 넣으면 용도지역·지목·면적·규제를 자동 조회해 활용 가능성을 등급으로 보여줍니다. 확정 판정이 아닌 사전검토입니다.</p>
         <div className={`status ${supabaseReady?'on':'off'}`}>{supabaseReady?'Supabase 연결됨':'직접 호출 모드 (anon 키 미설정)'}</div>
