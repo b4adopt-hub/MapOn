@@ -139,7 +139,16 @@ export default function App() {
   return (
     <div className="page">
       <header className="hero">
-        <div className="brand">맵땅</div>
+        <div className="brand">
+          <svg className="brand-pin" viewBox="0 0 36 46" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <path d="M18 2C10 2 3.5 8.5 3.5 16.5c0 9.5 12 22 13.4 23.4a1.5 1.5 0 0 0 2.2 0C20.5 38.5 32.5 26 32.5 16.5 32.5 8.5 26 2 18 2z" fill="#1f5c4d"/>
+            <path d="M11 18.5L18 12l7 6.5V25a1 1 0 0 1-1 1h-4v-4h-4v4h-4a1 1 0 0 1-1-1v-6.5z" fill="#fff"/>
+          </svg>
+          <span className="brand-text">맵<span className="brand-ddang">땅</span></span>
+        </div>
+        <div className="brand-ground" aria-hidden="true">
+          <svg viewBox="0 0 120 12" preserveAspectRatio="none"><path d="M0 8 Q20 2 40 6 T80 5 T120 7 V12 H0 Z" fill="#e6c9a8"/><path d="M0 8 Q20 2 40 6 T80 5 T120 7" stroke="#c89b6e" strokeWidth="1.5" fill="none"/></svg>
+        </div>
         <h1>지번을 넣기 전에, 먼저 살핍니다</h1>
         <p className="sub">주소만 넣으면 용도지역·지목·면적·규제를 자동 조회해 활용 가능성을 등급으로 보여줍니다. 확정 판정이 아닌 사전검토입니다.</p>
         <div className={`status ${supabaseReady?'on':'off'}`}>{supabaseReady?'Supabase 연결됨':'직접 호출 모드 (anon 키 미설정)'}</div>
