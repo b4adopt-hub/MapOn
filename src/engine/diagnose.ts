@@ -8,8 +8,8 @@
  * 데이터가 채워지기 전이라도 부분 입력으로 동작하며, 누락분은
  * "확인 필요" 신호로 처리한다.
  *
- * 검토 항목 설명(note)은 일반인 눈높이로 작성: 무엇인지 → 실제로 뭘 막는지
- * → 어디에 확인하면 되는지. 전문용어는 괄호로 풀어쓴다.
+ * 접도(맹지) 항목은 land-lookup이 인접 필지 지목을 분석해 전달하는
+ * roadAccess 결과를 반영한다(막연한 "확인하세요"가 아니라 근거 기반 안내).
  */
 
 import { matchZone, ZoneInfo } from './zones';
@@ -36,6 +36,12 @@ export interface LandInput {
   slopePercent?: number | null;
   /** 규제 신호 — 토지이음 규제 문자열 배열(예: 농업진흥구역, 보전산지, 개발제한구역 등) */
   regulations?: string[] | null;
+  /** 인접 도로(맹지) 확인 결과 — land-lookup이 제공 */
+  roadAccess?: {
+    status: 'direct_road' | 'ditch' | 'none' | 'unknown';
+    adjacentJimoks: string[];
+    message: string;
+  } | null;
 }
 
 /** 위험 항목 1건 */
@@ -338,13 +344,28 @@ export function diagnose(input: LandInput, purpose: Purpose): DiagnosisResult {
   riskItems.push(...r.risks);
   if (r.gradeAdj) grade = worseGrade(grade, r.gradeAdj);
 
-  // 5) 접도(맹지) — 데이터 부재 단계에서는 항상 확인 권고(info)
-  riskItems.push({
-    key: 'road_access',
-    label: '접도 확인 권고',
-    level: 'info',
-    note: '땅에 차가 드나들 도로가 붙어 있는지 꼭 확인하세요. 도로가 없는 땅(맹지)은 건축 허가가 안 나는 경우가 많아, 시세보다 싸도 집을 못 지을 수 있습니다. 현장에서 진입로가 실제로 있는지 봐야 합니다.',
-  });
+  // 5) 접도(맹지) — land-lookup의 인접 도로 확인 결과를 반영
+  const ra = input.roadAccess;
+  if (ra && ra.status !== 'unknown') {
+    const level: RiskItem['level'] =
+      ra.status === 'direct_road' ? 'info' : ra.status === 'ditch' ? 'caution' : 'warning';
+    const adj = ra.adjacentJimoks?.length ? ` (인접 지목: ${ra.adjacentJimoks.join('·')})` : '';
+    riskItems.push({
+      key: 'road_access',
+      label: ra.status === 'direct_road' ? '도로 접함 확인'
+        : ra.status === 'ditch' ? '구거·하천 인접 (진입 가능성 검토)'
+        : '도로 접함 미확인 (현황도로·지분 확인)',
+      level,
+      note: ra.message + adj,
+    });
+  } else {
+    riskItems.push({
+      key: 'road_access',
+      label: '접도 확인 권고',
+      level: 'info',
+      note: '땅에 차가 드나들 도로가 붙어 있는지 꼭 확인하세요. 도로가 없는 땅(맹지)은 건축 허가가 안 나는 경우가 많습니다. 다만 지적도에 안 나오는 현황도로나 도로지분 보유로 진입이 가능한 경우도 있으니, 진입 이력을 함께 확인하세요.',
+    });
+  }
 
   // 6) 트리거
   const surveyTrigger = SURVEY_PURPOSES.includes(purpose);
