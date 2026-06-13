@@ -258,9 +258,6 @@ export default function App() {
                 <div className="grade-desc">{result.gradeDescription}</div>
                 {result.zone && (<div className="zone-meta">{result.zone.name} · 건폐율 {result.zone.bcrMax}%(땅의 {result.zone.bcrMax}%까지 바닥 건축) · 용적률 {result.zone.farMax}%(층수 여유)</div>)}
               </div>
-              {result.estCostMin!=null && (
-                <div className="cost">예비 견적 범위 <strong>{result.estCostMin.toLocaleString()} ~ {result.estCostMax!.toLocaleString()}원</strong></div>
-              )}
               <div className="risks">
                 {result.riskItems.map(ri=>(
                   <div key={ri.key} className="risk">
