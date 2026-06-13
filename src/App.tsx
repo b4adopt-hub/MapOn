@@ -12,9 +12,11 @@ const GRADE_COLOR: Record<string,string> = {'가능성 높음':'#1a7f4b','조건
 const LEVEL_COLOR: Record<string,string> = {info:'#6b7280',caution:'#b8862d',warning:'#b83a3a'};
 
 interface UseZone { name:string; code:string; conflict:string; isPrimary:boolean }
+interface RoadAccess { status:'direct_road'|'ditch'|'none'|'unknown'; adjacentJimoks:string[]; message:string }
 interface LandLookup {
   pnu:string|null; address:string|null; jimok:string|null; areaSqm:number|null; areaPyeong:number|null;
   officialPrice:number|null; primaryUseZone:string|null; useZones:UseZone[]; regulations:string[];
+  roadAccess:RoadAccess|null;
   lat:number|null; lng:number|null; geomBoundary:unknown|null; cached:boolean; note?:string; error?:string; message?:string;
 }
 
@@ -85,6 +87,7 @@ export default function App() {
       areaSqm:areaSqm?Number(areaSqm):null,
       slopePercent:slope?Number(slope):null,
       regulations:regs.length?regs:null,
+      roadAccess:land?.roadAccess??null,
     };
   }
 
@@ -167,6 +170,16 @@ export default function App() {
             {land.useZones?.length>0 && (
               <div className="zone-tags">
                 {land.useZones.map(z=>(<span key={z.code} className={`zone-tag ${z.isPrimary?'primary':''}`}>{z.name}</span>))}
+              </div>
+            )}
+            {land.roadAccess && land.roadAccess.status!=='unknown' && (
+              <div className={`road-line road-${land.roadAccess.status}`}>
+                {land.roadAccess.status==='direct_road' && '도로 접함 — 맹지 아닐 가능성 높음'}
+                {land.roadAccess.status==='ditch' && '구거·하천 인접 — 점용·지분 시 진입 가능성'}
+                {land.roadAccess.status==='none' && '지적도상 도로 미접함 — 현황도로·지분 확인 필요'}
+                {land.roadAccess.adjacentJimoks?.length>0 && (
+                  <span className="road-adj"> · 인접: {land.roadAccess.adjacentJimoks.join('·')}</span>
+                )}
               </div>
             )}
           </div>
