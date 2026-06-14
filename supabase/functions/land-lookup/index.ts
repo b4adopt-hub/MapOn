@@ -1,11 +1,11 @@
-// MapOn: 토지 조회 Edge Function (v6 - 인접 도로(맹지) 자동 확인 추가)
+// MapOn: 토지 조회 Edge Function (v9.2 - 맹지 판정: bbox 쿼리 + 거리 필터 2.5m, 도로·구거·유지 면제)
 // 입력: { pnu } 또는 { address, addressType }
 // 흐름:
 //   1) 주소→getcoord 좌표→연속지적도 역조회→PNU 확정 (또는 PNU 직접)
 //   2) 면적: 경계 폴리곤에서 측지면적 직접 계산
 //   3) 공시지가: 지적도 jiga
 //   4) 용도지역/규제: NED getLandUseAttr
-//   5) 인접 도로 확인: 경계 주변 공간쿼리로 접한 필지 지목 분석(도로/구거 판정)
+//   5) 인접 도로 확인: bbox 공간쿼리(도로 포착) + 거리 2차 필터(일반필지 2.5m, 도로·구거·유지는 면제)
 //   6) land_lookups 캐싱
 // 시크릿: VWORLD_KEY(필수), VWORLD_DOMAIN(선택, 기본 b4adopt.org)
 
@@ -130,7 +130,11 @@ function geomAreaSqm(geom: any): number | null {
 }
 
 // ── 인접 도로(맹지) 확인 ──
-function bboxFromGeom(geom: any, padDeg: number): string | null {
+// bbox로 넓게 쿼리해 도로를 놓치지 않고, 일반 필지는 거리 필터로 과포함을 막는다.
+// 도로·구거·하천·제방·유지는 거리 필터 면제(맹지 오판 방지).
+
+/** 경계 bounding box를 meters만큼 확장한 WKT */
+function bboxWkt(geom: any, meters: number): string | null {
   if (!geom) return null;
   let minLng = Infinity, minLat = Infinity, maxLng = -Infinity, maxLat = -Infinity;
   const scan = (ring: number[][]) => {
@@ -140,13 +144,45 @@ function bboxFromGeom(geom: any, padDeg: number): string | null {
     }
   };
   try {
-    if (geom.type === 'MultiPolygon') for (const poly of geom.coordinates) for (const ring of poly) scan(ring);
-    else if (geom.type === 'Polygon') for (const ring of geom.coordinates) scan(ring);
+    if (geom.type === 'MultiPolygon') for (const poly of geom.coordinates) for (const r of poly) scan(r);
+    else if (geom.type === 'Polygon') for (const r of geom.coordinates) scan(r);
     else return null;
   } catch { return null; }
   if (!isFinite(minLng)) return null;
-  const a = minLng - padDeg, b = minLat - padDeg, c = maxLng + padDeg, d = maxLat + padDeg;
+  const cLat = (minLat + maxLat) / 2;
+  const dLat = meters / 111320;
+  const dLng = meters / (111320 * Math.cos(cLat * Math.PI / 180));
+  const a = minLng - dLng, b = minLat - dLat, c = maxLng + dLng, d = maxLat + dLat;
   return `POLYGON((${a} ${b}, ${c} ${b}, ${c} ${d}, ${a} ${d}, ${a} ${b}))`;
+}
+
+/** 원본 geom의 모든 외곽 링 추출(거리 계산용) */
+function outerRings(geom: any): number[][][] {
+  if (!geom) return [];
+  try {
+    if (geom.type === 'MultiPolygon') return geom.coordinates.map((p: number[][][]) => p[0]);
+    if (geom.type === 'Polygon') return [geom.coordinates[0]];
+  } catch { return []; }
+  return [];
+}
+
+/** 두 링 간 최단거리(m) — 점↔선분 양방향 */
+function ringsMinDistance(ringA: number[][], ringB: number[][], centerLat: number): number {
+  const latRad = centerLat * Math.PI / 180;
+  const mLat = 111320, mLng = 111320 * Math.cos(latRad);
+  const toM = ([lng, lat]: number[]): number[] => [lng * mLng, lat * mLat];
+  const A = ringA.map(toM), B = ringB.map(toM);
+  const segDist = (p: number[], a: number[], b: number[]): number => {
+    const dx = b[0] - a[0], dy = b[1] - a[1];
+    const len2 = dx * dx + dy * dy;
+    let t = len2 > 0 ? ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / len2 : 0;
+    t = Math.max(0, Math.min(1, t));
+    return Math.hypot(p[0] - (a[0] + t * dx), p[1] - (a[1] + t * dy));
+  };
+  let min = Infinity;
+  for (const p of A) for (let i = 0; i < B.length - 1; i++) { const d = segDist(p, B[i], B[i + 1]); if (d < min) min = d; }
+  for (const p of B) for (let i = 0; i < A.length - 1; i++) { const d = segDist(p, A[i], A[i + 1]); if (d < min) min = d; }
+  return min;
 }
 
 function jimokOf(jibun: string): string {
@@ -154,25 +190,61 @@ function jimokOf(jibun: string): string {
 }
 
 async function checkRoadAccess(geom: any, selfPnu: string | null, key: string): Promise<RoadAccess> {
-  const bbox = bboxFromGeom(geom, 0.00012);
-  if (!bbox) return { status: 'unknown', adjacentJimoks: [], message: '인접 필지를 확인하지 못했습니다.' };
+  // 쿼리는 bbox로 넓게(BBOX_M) 잡아 도로를 놓치지 않되,
+  // 일반 필지는 거리 필터(ADJ_THRESHOLD_M)로 '진짜 변을 맞댄 것'만 채택해 과포함을 막는다.
+  // - BBOX_M: 도로·구거가 모서리/약간 떨어져 있어도 후보로 잡히도록 넉넉히.
+  // - ADJ_THRESHOLD_M: 지적 폴리곤 노드 미스매칭 오차(1~2m)는 통과시키되,
+  //   폭 2~3m짜리 알박기 띠 필지(타인 소유)는 걸러내도록 2.5m로 타이트하게.
+  const BBOX_M = 14;
+  const ADJ_THRESHOLD_M = 2.5;
+  const wkt = bboxWkt(geom, BBOX_M);
+  if (!wkt) return { status: 'unknown', adjacentJimoks: [], message: '인접 필지를 확인하지 못했습니다.' };
+
+  const selfRings = outerRings(geom);
+  const centerLat = selfRings[0]?.[0]?.[1] ?? 37.5;
+
   const url = `${VW_DATA}?service=data&request=GetFeature&data=LP_PA_CBND_BUBUN`
-    + `&key=${key}&geomFilter=${encodeURIComponent(bbox)}&geometry=false&format=json&size=200&page=1&crs=EPSG:4326`;
+    + `&key=${key}&geomFilter=${encodeURIComponent(wkt)}&geometry=true&format=json&size=300&page=1&crs=EPSG:4326`;
   try {
     const res = await fetch(url);
     if (!res.ok) return { status: 'unknown', adjacentJimoks: [], message: '인접 필지 조회에 실패했습니다.' };
     const j = await res.json();
     const feats = j?.response?.result?.featureCollection?.features ?? [];
+
     const jimoks = new Set<string>();
+    let considered = 0;
     for (const f of feats) {
       const p = f.properties ?? {};
       if (selfPnu && p.pnu === selfPnu) continue;
       const jm = jimokOf(p.jibun || '');
-      if (jm) jimoks.add(jm);
+      if (!jm) continue;
+
+      // 진입과 직결된 핵심 지목(도로·구거·하천·제방·유지)은 버퍼 영역에 있으면 무조건 포함.
+      // 이런 지목은 폭이 있어 경계에서 다소 떨어져 보일 수 있으므로 거리 필터를 면제한다.
+      // (맹지 오판 방지 — 실제 접한 도로를 거리 때문에 떨어뜨리면 안 됨)
+      const isAccessKey = jm.includes('도로') || jm === '도' || jm.includes('구거') || jm === '구' || jm.includes('하천') || jm.includes('제방') || jm.includes('유지') || jm === '유';
+      if (isAccessKey) { jimoks.add(jm); considered++; continue; }
+
+      // 일반 필지만 거리 2차 필터: 후보 경계와 원본 경계의 최단거리가 임계 이내인지
+      const candRings = outerRings(f.geometry);
+      if (candRings.length === 0) {
+        jimoks.add(jm); considered++;
+        continue;
+      }
+      let near = false;
+      for (const sr of selfRings) {
+        for (const cr of candRings) {
+          if (ringsMinDistance(sr, cr, centerLat) <= ADJ_THRESHOLD_M) { near = true; break; }
+        }
+        if (near) break;
+      }
+      if (near) { jimoks.add(jm); considered++; }
     }
+
     const list = [...jimoks];
     const hasRoad = list.some(j => j.includes('도로') || j === '도');
     const hasDitch = list.some(j => j.includes('구거') || j === '구' || j.includes('하천') || j.includes('제방'));
+    const hasReservoir = list.some(j => j.includes('유지') || j === '유');
 
     if (hasRoad) {
       return { status: 'direct_road', adjacentJimoks: list,
@@ -182,8 +254,14 @@ async function checkRoadAccess(geom: any, selfPnu: string | null, key: string): 
       return { status: 'ditch', adjacentJimoks: list,
         message: '인접한 땅 중에 "구거(옛 물길·도랑)"나 하천·제방이 있습니다. 구거는 점용허가를 받거나, 구거 위 도로지분·농로(다리)를 확보하면 진입로로 인정될 수 있습니다. 과거 도로 이력이나 도로지분 보유가 있으면 맹지가 아닐 수 있으니, 등기·점용 이력을 함께 확인하세요.' };
     }
+    if (hasReservoir) {
+      return { status: 'ditch', adjacentJimoks: list,
+        message: '인접한 땅 중에 "유지(저수지·소류지 등 물이 고이는 땅)"가 있습니다. 지적도상 유지여도 오래전 매립되어 현황도로로 쓰이는 경우가 있고, 반대로 실제 물이 차 있는 경우도 있습니다. 진입로로 쓰려면 목적 외 사용승인(점용)이 필요할 수 있으니, 현황과 사용 가능 여부를 현장·지자체에서 확인하세요.' };
+    }
     return { status: 'none', adjacentJimoks: list,
-      message: '지적도상 바로 접한 "도로" 필지는 확인되지 않았습니다. 다만 지적도에 안 나오는 현황도로(실제 사용 중인 길), 도로지분 보유, 구거 점용 등으로 진입이 가능한 경우도 많습니다. 진입 이력이 있으면 맹지가 아닐 수 있습니다.' };
+      message: considered > 0
+        ? '바로 접한 필지 중에 "도로"는 확인되지 않았습니다. 다만 지적도에 안 나오는 현황도로(실제 사용 중인 길), 도로지분 보유, 구거 점용 등으로 진입이 가능한 경우도 많습니다. 진입 이력이 있으면 맹지가 아닐 수 있습니다.'
+        : '인접 필지 정보를 충분히 얻지 못했습니다. 도로 접함 여부는 현장과 지적도에서 직접 확인하세요.' };
   } catch {
     return { status: 'unknown', adjacentJimoks: [], message: '인접 필지 조회 중 오류가 발생했습니다.' };
   }
