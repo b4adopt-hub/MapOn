@@ -1,4 +1,4 @@
-// MapOn: 토지 조회 Edge Function (v9.2 - 맹지 판정: bbox 쿼리 + 거리 필터 2.5m, 도로·구거·유지 면제)
+// MapOn: 토지 조회 Edge Function (v10 - 도로 소유구분 판별: 사유도로(사도) 경고 추가, getPossessionAttr 연동)
 // 입력: { pnu } 또는 { address, addressType }
 // 흐름:
 //   1) 주소→getcoord 좌표→연속지적도 역조회→PNU 확정 (또는 PNU 직접)
@@ -6,6 +6,7 @@
 //   3) 공시지가: 지적도 jiga
 //   4) 용도지역/규제: NED getLandUseAttr
 //   5) 인접 도로 확인: bbox 공간쿼리(도로 포착) + 거리 2차 필터(일반필지 2.5m, 도로·구거·유지는 면제)
+//      + 접한 도로의 소유구분(getPossessionAttr) 조회 → 사유도로(사도) 경고
 //   6) land_lookups 캐싱
 // 시크릿: VWORLD_KEY(필수), VWORLD_DOMAIN(선택, 기본 b4adopt.org)
 
@@ -27,6 +28,8 @@ interface RoadAccess {
   status: 'direct_road' | 'ditch' | 'none' | 'unknown';
   adjacentJimoks: string[];
   message: string;
+  roadOwnership?: 'gov' | 'private' | 'mixed' | 'unknown';  // 접한 도로의 소유: 국공유/사유/혼재/미상
+  roadOwnerNote?: string;                                    // 소유 관련 안내 문구
 }
 
 interface LandResult {
@@ -189,7 +192,25 @@ function jimokOf(jibun: string): string {
   return (jibun || '').replace(/[0-9\-\s]/g, '').trim();
 }
 
-async function checkRoadAccess(geom: any, selfPnu: string | null, key: string): Promise<RoadAccess> {
+/** 토지소유정보(getPossessionAttr) 조회 → 소유구분 판별.
+ *  nationInsttSeCode: "ZZ"(구분없음)=사유, 그 외 코드(01=중앙부처, 지자체 등)=국공유. */
+async function fetchOwnership(pnu: string, key: string, domain: string): Promise<'gov' | 'private' | 'unknown'> {
+  try {
+    const url = `${NED}/getPossessionAttr?key=${key}&pnu=${pnu}&format=json&numOfRows=10&domain=${encodeURIComponent(domain)}`;
+    const res = await fetch(url);
+    if (!res.ok) return 'unknown';
+    const j = await res.json();
+    const f = j?.possessions?.field;
+    const arr = Array.isArray(f) ? f : (f ? [f] : []);
+    if (arr.length === 0) return 'unknown';
+    // 하나라도 국가/지자체 소유(ZZ가 아님)면 국공유로 본다(진입 안전).
+    const anyGov = arr.some((it: any) => it?.nationInsttSeCode && it.nationInsttSeCode !== 'ZZ');
+    if (anyGov) return 'gov';
+    return 'private';
+  } catch { return 'unknown'; }
+}
+
+async function checkRoadAccess(geom: any, selfPnu: string | null, key: string, domain: string): Promise<RoadAccess> {
   // 쿼리는 bbox로 넓게(BBOX_M) 잡아 도로를 놓치지 않되,
   // 일반 필지는 거리 필터(ADJ_THRESHOLD_M)로 '진짜 변을 맞댄 것'만 채택해 과포함을 막는다.
   // - BBOX_M: 도로·구거가 모서리/약간 떨어져 있어도 후보로 잡히도록 넉넉히.
@@ -212,6 +233,7 @@ async function checkRoadAccess(geom: any, selfPnu: string | null, key: string): 
     const feats = j?.response?.result?.featureCollection?.features ?? [];
 
     const jimoks = new Set<string>();
+    const roadPnus: string[] = [];  // 소유구분 조회용 도로 PNU
     let considered = 0;
     for (const f of feats) {
       const p = f.properties ?? {};
@@ -222,8 +244,12 @@ async function checkRoadAccess(geom: any, selfPnu: string | null, key: string): 
       // 진입과 직결된 핵심 지목(도로·구거·하천·제방·유지)은 버퍼 영역에 있으면 무조건 포함.
       // 이런 지목은 폭이 있어 경계에서 다소 떨어져 보일 수 있으므로 거리 필터를 면제한다.
       // (맹지 오판 방지 — 실제 접한 도로를 거리 때문에 떨어뜨리면 안 됨)
-      const isAccessKey = jm.includes('도로') || jm === '도' || jm.includes('구거') || jm === '구' || jm.includes('하천') || jm.includes('제방') || jm.includes('유지') || jm === '유';
-      if (isAccessKey) { jimoks.add(jm); considered++; continue; }
+      const isAccessKey = jm.includes('도로') || jm === '도' || jm.includes('구거') || jm === '구' || jm.includes('하천') || jm === '천' || jm.includes('제방') || jm === '제' || jm.includes('유지') || jm === '유';
+      if (isAccessKey) {
+        jimoks.add(jm); considered++;
+        if ((jm.includes('도로') || jm === '도') && p.pnu) roadPnus.push(p.pnu);
+        continue;
+      }
 
       // 일반 필지만 거리 2차 필터: 후보 경계와 원본 경계의 최단거리가 임계 이내인지
       const candRings = outerRings(f.geometry);
@@ -243,12 +269,33 @@ async function checkRoadAccess(geom: any, selfPnu: string | null, key: string): 
 
     const list = [...jimoks];
     const hasRoad = list.some(j => j.includes('도로') || j === '도');
-    const hasDitch = list.some(j => j.includes('구거') || j === '구' || j.includes('하천') || j.includes('제방'));
+    const hasDitch = list.some(j => j.includes('구거') || j === '구' || j.includes('하천') || j === '천' || j.includes('제방') || j === '제');
     const hasReservoir = list.some(j => j.includes('유지') || j === '유');
 
     if (hasRoad) {
-      return { status: 'direct_road', adjacentJimoks: list,
-        message: '인접한 땅 중에 "도로"가 있습니다. 지적도상 도로에 접해 있어 맹지가 아닐 가능성이 높습니다. 다만 그 도로가 실제 차가 다닐 수 있는 현황도로인지, 건축 가능한 폭(보통 4m 이상)인지는 현장에서 확인하세요.' };
+      // 접한 도로 필지의 소유구분 조회(최대 3개). 하나라도 국공유면 안심, 전부 사유면 경고.
+      let roadOwnership: 'gov' | 'private' | 'mixed' | 'unknown' = 'unknown';
+      let roadOwnerNote = '';
+      const uniqRoads = [...new Set(roadPnus)].slice(0, 3);
+      if (uniqRoads.length > 0) {
+        const owns = await Promise.all(uniqRoads.map(rp => fetchOwnership(rp, key, domain)));
+        const hasGov = owns.includes('gov');
+        const hasPrivate = owns.includes('private');
+        if (hasGov && hasPrivate) roadOwnership = 'mixed';
+        else if (hasGov) roadOwnership = 'gov';
+        else if (hasPrivate) roadOwnership = 'private';
+        else roadOwnership = 'unknown';
+
+        if (roadOwnership === 'gov') {
+          roadOwnerNote = ' 접한 도로 중 국가·지자체 소유(국공유) 도로가 있어, 통행 동의 측면에서는 비교적 안전한 편입니다.';
+        } else if (roadOwnership === 'private') {
+          roadOwnerNote = ' ⚠️ 접한 도로가 모두 개인 소유(사도)로 확인됩니다. 건축 시 도로 소유자의 토지사용승낙서나 도로지분 확보가 필요할 수 있으니, 반드시 소유관계와 통행권을 확인하세요.';
+        } else if (roadOwnership === 'mixed') {
+          roadOwnerNote = ' 접한 도로 중 일부는 국공유, 일부는 사유로 보입니다. 실제 진입에 쓰는 도로가 어느 쪽인지 확인하세요.';
+        }
+      }
+      return { status: 'direct_road', adjacentJimoks: list, roadOwnership, roadOwnerNote: roadOwnerNote.trim() || undefined,
+        message: '인접한 땅 중에 "도로"가 있습니다. 지적도상 도로에 접해 있어 맹지가 아닐 가능성이 높습니다. 다만 그 도로가 실제 차가 다닐 수 있는 현황도로인지, 건축 가능한 폭(보통 4m 이상)인지는 현장에서 확인하세요.' + roadOwnerNote };
     }
     if (hasDitch) {
       return { status: 'ditch', adjacentJimoks: list,
@@ -340,8 +387,8 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // 인접 도로(맹지) 확인
-    const roadAccess = await checkRoadAccess(cad.geom, resolvedPnu, KEY).catch(() => null);
+    // 인접 도로(맹지) 확인 + 도로 소유구분 판별
+    const roadAccess = await checkRoadAccess(cad.geom, resolvedPnu, KEY, DOMAIN).catch(() => null);
 
     let lat = coord?.lat ?? null;
     let lng = coord?.lng ?? null;
