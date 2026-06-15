@@ -11,6 +11,9 @@ const REGULATION_OPTIONS = ['농업진흥구역','보전산지','개발제한구
 const GRADE_COLOR: Record<string,string> = {'가능성 높음':'#1a7f4b','조건부 검토':'#2d6cb8','전문가 확인 필요':'#b8862d','리스크 높음':'#c2622d','불가 가능성 높음':'#b83a3a'};
 const LEVEL_COLOR: Record<string,string> = {info:'#6b7280',caution:'#b8862d',warning:'#b83a3a'};
 
+// 강화 면책 문구 — 결과 화면과 푸터에 반복 표시(법적 방어)
+const DISCLAIMER_FULL = '본 서비스는 공공데이터와 사용자가 입력한 정보를 바탕으로 한 사전 참고자료입니다. 건축 가능 여부, 개발행위허가 가능 여부, 도로 인정 여부, 권리·점유 관계, 인허가 가능성, 가격 적정성, 입찰·매수 판단을 확정하거나 보장하지 않습니다. 최종 판단은 관할 지자체, 법원 기록, 공부서류, 현장조사 및 관련 전문가 검토를 통해 진행해야 합니다.';
+
 interface UseZone { name:string; code:string; conflict:string; isPrimary:boolean }
 interface RoadAccess { status:'direct_road'|'ditch'|'none'|'unknown'; adjacentJimoks:string[]; message:string; roadOwnership?:'gov'|'private'|'mixed'|'unknown'; roadOwnerNote?:string }
 interface LandLookup {
@@ -147,7 +150,7 @@ export default function App() {
           <span className="brand-text">맵<span className="brand-ddang">땅</span></span>
         </div>
         <h1>지번을 넣기 전에, 먼저 살핍니다</h1>
-        <p className="sub">주소만 넣으면 용도지역·지목·면적·규제를 자동 조회해 활용 가능성을 등급으로 보여줍니다. 확정 판정이 아닌 사전검토입니다.</p>
+        <p className="sub">주소만 넣으면 용도지역·지목·면적·규제·도로 인접 여부를 자동 조회해, 활용 전 확인해야 할 위험 신호를 등급으로 보여줍니다. 확정 판정이 아닌 사전검토입니다.</p>
         <div className={`status ${supabaseReady?'on':'off'}`}>{supabaseReady?'Supabase 연결됨':'직접 호출 모드 (anon 키 미설정)'}</div>
       </header>
 
@@ -180,9 +183,9 @@ export default function App() {
             )}
             {land.roadAccess && land.roadAccess.status!=='unknown' && (
               <div className={`road-line road-${land.roadAccess.status}`}>
-                {land.roadAccess.status==='direct_road' && '도로 접함 — 맹지 아닐 가능성 높음'}
-                {land.roadAccess.status==='ditch' && '구거·하천 인접 — 점용·지분 시 진입 가능성'}
-                {land.roadAccess.status==='none' && '지적도상 도로 미접함 — 현황도로·지분 확인 필요'}
+                {land.roadAccess.status==='direct_road' && '지적도상 도로 인접 가능성 있음 — 현황도로·도로폭·건축법상 도로 여부 확인 필요'}
+                {land.roadAccess.status==='ditch' && '구거·하천 인접 — 점용·지분 시 진입 가능성, 별도 확인 필요'}
+                {land.roadAccess.status==='none' && '지적도상 도로 미접함 — 현황도로·지분·진입 이력 확인 필요'}
                 {land.roadAccess.adjacentJimoks?.length>0 && (
                   <span className="road-adj"> · 인접: {land.roadAccess.adjacentJimoks.join('·')}</span>
                 )}
@@ -190,9 +193,9 @@ export default function App() {
             )}
             {land.roadAccess?.status==='direct_road' && land.roadAccess.roadOwnership && land.roadAccess.roadOwnership!=='unknown' && (
               <div className={`road-owner road-owner-${land.roadAccess.roadOwnership}`}>
-                {land.roadAccess.roadOwnership==='private' && '⚠️ 접한 도로가 사유지(사도) — 토지사용승낙서·도로지분 확인 필요'}
-                {land.roadAccess.roadOwnership==='gov' && '✓ 접한 도로에 국공유 도로 있음 — 통행 측면 비교적 안전'}
-                {land.roadAccess.roadOwnership==='mixed' && '접한 도로 국공유·사유 혼재 — 실제 진입 도로 확인 필요'}
+                {land.roadAccess.roadOwnership==='private' && '⚠️ 접한 도로가 사유지(사도)로 보임 — 토지사용승낙서·도로지분·통행권 확인 필요'}
+                {land.roadAccess.roadOwnership==='gov' && '접한 도로에 국공유 도로 있음 — 통행 동의 측면은 비교적 안전한 편(현황·폭 별도 확인)'}
+                {land.roadAccess.roadOwnership==='mixed' && '접한 도로 국공유·사유 혼재 — 실제 진입에 쓰는 도로가 어느 쪽인지 확인 필요'}
               </div>
             )}
           </div>
@@ -237,7 +240,7 @@ export default function App() {
         </div>
 
         <div className="field">
-          <label>직접 입력 <em className="hint">원하는 활용을 자유롭게 적으면 AI가 분석합니다</em></label>
+          <label>직접 입력 <em className="hint">원하는 활용을 자유롭게 적으면 확인 항목을 정리해 드립니다</em></label>
           <textarea className="freetext" value={freeText} onChange={e=>setFreeText(e.target.value)}
             placeholder="예) 반려동물과 함께 살 단독주택과 작은 텃밭, 손님용 주차공간을 만들고 싶어요." rows={3} />
         </div>
@@ -251,7 +254,7 @@ export default function App() {
 
         <div className="btn-row">
           <button className="run" onClick={run}>사전검토 실행</button>
-          <button className="run ai" onClick={runAI} disabled={aiLoading}>{aiLoading?'AI 분석 중…':'AI 종합 분석'}</button>
+          <button className="run ai" onClick={runAI} disabled={aiLoading}>{aiLoading?'정리 중…':'확인 항목 생성'}</button>
         </div>
       </section>
 
@@ -263,6 +266,9 @@ export default function App() {
                 <div className="grade-label">{result.purposeLabel}</div>
                 <div className="grade" style={{color:GRADE_COLOR[result.gradeLabel]}}>{result.gradeLabel}</div>
                 <div className="grade-desc">{result.gradeDescription}</div>
+                {(result.gradeLabel==='리스크 높음'||result.gradeLabel==='불가 가능성 높음') && (
+                  <div className="grade-caveat">'불가능' 판정이 아니라, 추가 확인 없이 진행하면 손실 가능성이 크다는 의미입니다.</div>
+                )}
                 {result.zone && (<div className="zone-meta">{result.zone.name} · 건폐율 {result.zone.bcrMax}%(땅의 {result.zone.bcrMax}%까지 바닥 건축) · 용적률 {result.zone.farMax}%(층수 여유)</div>)}
               </div>
               <div className="risks">
@@ -278,20 +284,20 @@ export default function App() {
               </div>
             </div>
           ))}
-          <p className="disclaimer">{results[0].disclaimer}</p>
+          <p className="disclaimer">{DISCLAIMER_FULL}</p>
         </section>
       )}
 
       {(aiText || aiErr) && (
         <section className="result ai-result">
-          <h3 className="ai-title">AI 종합 분석</h3>
+          <h3 className="ai-title">확인 항목 정리</h3>
           {aiErr && <div className="lookup-err">{aiErr}</div>}
           {aiText && <div className="ai-text">{aiText}</div>}
-          {aiDisc && <p className="disclaimer">{aiDisc}</p>}
+          <p className="disclaimer">{DISCLAIMER_FULL}</p>
         </section>
       )}
 
-      <footer className="foot">맵땅 · 토지 활용 사전검토 플랫폼 · 본 서비스의 경계·등급 정보는 참고용이며 법적 확정 판정이 아닙니다.</footer>
+      <footer className="foot">맵땅 · 토지 활용 사전검토 플랫폼<br/>{DISCLAIMER_FULL}</footer>
     </div>
   );
 }
