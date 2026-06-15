@@ -12,7 +12,7 @@ const GRADE_COLOR: Record<string,string> = {'가능성 높음':'#1a7f4b','조건
 const LEVEL_COLOR: Record<string,string> = {info:'#6b7280',caution:'#b8862d',warning:'#b83a3a'};
 
 interface UseZone { name:string; code:string; conflict:string; isPrimary:boolean }
-interface RoadAccess { status:'direct_road'|'ditch'|'none'|'unknown'; adjacentJimoks:string[]; message:string }
+interface RoadAccess { status:'direct_road'|'ditch'|'none'|'unknown'; adjacentJimoks:string[]; message:string; roadOwnership?:'gov'|'private'|'mixed'|'unknown'; roadOwnerNote?:string }
 interface LandLookup {
   pnu:string|null; address:string|null; jimok:string|null; areaSqm:number|null; areaPyeong:number|null;
   officialPrice:number|null; primaryUseZone:string|null; useZones:UseZone[]; regulations:string[];
@@ -186,6 +186,13 @@ export default function App() {
                 {land.roadAccess.adjacentJimoks?.length>0 && (
                   <span className="road-adj"> · 인접: {land.roadAccess.adjacentJimoks.join('·')}</span>
                 )}
+              </div>
+            )}
+            {land.roadAccess?.status==='direct_road' && land.roadAccess.roadOwnership && land.roadAccess.roadOwnership!=='unknown' && (
+              <div className={`road-owner road-owner-${land.roadAccess.roadOwnership}`}>
+                {land.roadAccess.roadOwnership==='private' && '⚠️ 접한 도로가 사유지(사도) — 토지사용승낙서·도로지분 확인 필요'}
+                {land.roadAccess.roadOwnership==='gov' && '✓ 접한 도로에 국공유 도로 있음 — 통행 측면 비교적 안전'}
+                {land.roadAccess.roadOwnership==='mixed' && '접한 도로 국공유·사유 혼재 — 실제 진입 도로 확인 필요'}
               </div>
             )}
           </div>
