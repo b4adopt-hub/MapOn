@@ -48,7 +48,6 @@ export default function App() {
   // AI 분석
   const [aiLoading, setAiLoading] = useState(false);
   const [aiText, setAiText] = useState<string|null>(null);
-  const [aiDisc, setAiDisc] = useState<string|null>(null);
   const [aiErr, setAiErr] = useState<string|null>(null);
 
   function togglePurpose(p:Purpose){ setPurposes(prev=>prev.includes(p)?prev.filter(x=>x!==p):[...prev,p]); }
@@ -134,7 +133,7 @@ export default function App() {
         data=await r.json();
       }
       if(data.error){ setAiErr(data.message||data.error); return; }
-      setAiText(data.analysis); setAiDisc(data.disclaimer??null);
+      setAiText(data.analysis);
     }catch(e){ setAiErr(e instanceof Error?e.message:String(e)); }
     finally{ setAiLoading(false); }
   }
