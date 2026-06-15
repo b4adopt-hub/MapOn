@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { diagnose, LandInput, DiagnosisResult } from './engine/diagnose';
 import { Purpose, PURPOSE_LABELS } from './engine/purposes';
+import { buildOrdinance } from './engine/ordinance';
 import { supabase, supabaseReady } from './lib/supabase';
 import LandMap from './components/LandMap';
 
@@ -259,6 +260,27 @@ export default function App() {
 
       {results.length>0 && (
         <section className="result">
+          {(() => {
+            const ord = buildOrdinance(land?.pnu, land?.primaryUseZone, purposes);
+            if (ord.items.length===0) return null;
+            return (
+              <div className="ordinance">
+                <h3 className="ord-title">지자체 조례 확인 항목{ord.sggName?` · ${ord.sggName}`:''}</h3>
+                <p className="ord-lead">용도지역·규제는 자동 조회됐지만, 건축물 높이·건폐율 특례·가축사육 거리 등 세부 기준은 지자체 조례로 정해집니다. 아래 항목을 조례에서 확인하세요.</p>
+                {ord.items.map(it=>(
+                  <div key={it.key} className={`ord-item ord-${it.level}`}>
+                    <div className="ord-item-label">{it.label}</div>
+                    <div className="ord-item-note">{it.note}</div>
+                  </div>
+                ))}
+                {ord.elisUrl && (
+                  <a className="ord-elis" href={ord.elisUrl} target="_blank" rel="noopener noreferrer">
+                    {ord.sggName?`${ord.sggName} 자치법규(ELIS) 열기`:'자치법규(ELIS) 열기'} ↗
+                  </a>
+                )}
+              </div>
+            );
+          })()}
           {results.map((result)=>(
             <div key={result.purpose} className="result-block">
               <div className="grade-card">
