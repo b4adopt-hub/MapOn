@@ -291,7 +291,7 @@ export default function App() {
         </section>
       )}
 
-      <footer className="foot">맵땅 · 토지 활용 사전검토 플랫폼 · 본 서비스의 경계·등급 정보는 참고용이며 법적 확정 판정이 아닙니다. <span style={{opacity:0.5}}>build v10.1</span></footer>
+      <footer className="foot">맵땅 · 토지 활용 사전검토 플랫폼 · 본 서비스의 경계·등급 정보는 참고용이며 법적 확정 판정이 아닙니다.</footer>
     </div>
   );
 }
