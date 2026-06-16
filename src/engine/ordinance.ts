@@ -202,6 +202,65 @@ function gapyeongOrdinance(zoneName: string, purposes: Purpose[]): OrdinanceItem
   return items;
 }
 
+/**
+ * 영월군(51750) 전용 조례 디테일.
+ * 출처: 영월군 군계획 조례(제46·48·51조), 영월군 가축사육제한에 관한 조례(별표1).
+ * 건폐율 수치는 조례 원문 확인분.
+ */
+function yeongwolOrdinance(zoneName: string, purposes: Purpose[]): OrdinanceItem[] {
+  const items: OrdinanceItem[] = [];
+  const z = zoneName || '';
+  const buildPurposes: Purpose[] = ['house', 'cafe', 'warehouse', 'petfacility', 'farmhut'];
+
+  // 용도지역별 건폐율 — 영월군 군계획 조례 제46조(성장관리계획 수립 지역 상향)
+  if (z.includes('계획관리')) {
+    items.push({
+      key: 'yw_bcr_plan',
+      label: '계획관리지역 건폐율 — 40%(성장관리계획 수립 시 50%)',
+      level: 'info',
+      note: '영월군 군계획 조례상 계획관리지역의 건폐율은 40% 이하입니다. 다만 해당 지역에 성장관리계획이 수립돼 있으면 50% 이하까지 허용됩니다. 필지가 성장관리계획구역에 드는지 확인하면 활용 면적이 달라집니다. 용적률은 계획관리지역 기준(통상 100% 이하)을 군청에 확인하세요.',
+    });
+  }
+  if (z.includes('생산관리') || z.includes('자연녹지') || z.includes('생산녹지')) {
+    items.push({
+      key: 'yw_bcr_green',
+      label: '건폐율 20% — 성장관리계획 수립 시 30%',
+      level: 'info',
+      note: '영월군 군계획 조례상 생산관리·자연녹지·생산녹지 등의 건폐율은 원칙적으로 20% 이하이며, 성장관리계획이 수립된 지역은 30% 이하까지 허용됩니다. 필지가 성장관리계획구역에 포함되는지 확인하세요.',
+    });
+  }
+  if (z.includes('생산녹지')) {
+    items.push({
+      key: 'yw_green_special',
+      label: '생산녹지 건폐율 특례 — 일부 농업시설 60%',
+      level: 'info',
+      note: '영월군에서 생산된 농수산물의 가공·처리시설 및 농수산업 관련 시험·연구시설, 농산물 건조·보관시설, 영월군 농산물 산지유통시설 등은 영월군 군계획 조례상 건폐율 60% 이하까지 허용됩니다. 지으려는 건축물이 이 특례에 해당하는지 확인하면 활용 면적이 크게 달라집니다.',
+    });
+  }
+
+  // 건축물 높이 — 경관지구 지정 시 별도 높이 제한
+  if (purposes.some(p => buildPurposes.includes(p))) {
+    items.push({
+      key: 'yw_height',
+      label: '영월군 건축물 높이 — 경관지구·일조권 확인',
+      level: 'caution',
+      note: '영월군은 자연경관지구·특화경관지구·시가지경관지구 등 경관지구로 지정된 구역에서 건축물 높이·규모를 별도로 제한합니다(군계획 조례 제36·40조). 또 정북방향 일조권 기준이 적용됩니다. 필지가 경관지구에 드는지, 계획한 높이·층수가 가능한지 영월군 건축조례·군계획 조례로 확인하세요.',
+    });
+  }
+
+  // 가축사육제한 — 반려동물 시설
+  if (purposes.includes('petfacility')) {
+    items.push({
+      key: 'yw_livestock',
+      label: '영월군 가축사육제한 — 별표1 제한지역 거리 확인',
+      level: 'warning',
+      note: '반려동물 보호·위탁·번식·훈련·장묘 시설 등은 영월군 가축사육제한에 관한 조례 별표1의 가축사육 제한지역(주거 밀집지·상수원·도로·하천 등으로부터의 이격거리)과 건축물 용도 기준에 걸릴 수 있습니다. 동물보호법상 등록·허가 여부와 함께, 해당 필지가 제한지역 거리 안에 드는지 군청에 확인하세요.',
+    });
+  }
+
+  return items;
+}
+
 /** 일반 지자체 — 조례 확인 안내 */
 function genericOrdinance(zoneName: string, purposes: Purpose[]): OrdinanceItem[] {
   const items: OrdinanceItem[] = [];
@@ -247,6 +306,8 @@ export function buildOrdinance(
   let items: OrdinanceItem[];
   if (sgg === '41820') {
     items = gapyeongOrdinance(z, ps);
+  } else if (sgg === '51750') {
+    items = yeongwolOrdinance(z, ps);
   } else {
     items = genericOrdinance(z, ps);
   }
