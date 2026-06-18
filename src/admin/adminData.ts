@@ -137,3 +137,54 @@ export async function acknowledgeWatch(id: string, newEffectiveDate: string | nu
   const { error } = await supabase.from('ordinance_watch').update(patch).eq('id', id);
   return error ? error.message : null;
 }
+
+// ── 전문가 승인 ──
+export interface ExpertAdminRow {
+  id: string;
+  expert_type: string;
+  name: string;
+  phone: string | null;
+  region: string | null;
+  office_name: string | null;
+  rep_name: string | null;
+  biz_no: string | null;
+  license_no: string | null;
+  office_addr: string | null;
+  office_phone: string | null;
+  fields: string[] | null;
+  intro: string | null;
+  license_file: string | null;
+  biz_file: string | null;
+  status: string;
+  review_note: string | null;
+  created_at: string;
+}
+
+export async function fetchExperts(): Promise<ExpertAdminRow[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from('experts')
+    .select('*')
+    .order('created_at', { ascending: false });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as ExpertAdminRow[];
+}
+
+export async function reviewExpert(id: string, status: string, note: string | null): Promise<string | null> {
+  if (!supabase) return 'Supabase 미연결';
+  const { data: u } = await supabase.auth.getUser();
+  const { error } = await supabase.from('experts').update({
+    status, review_note: note,
+    reviewed_by: u?.user?.id ?? null,
+    reviewed_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  }).eq('id', id);
+  return error ? error.message : null;
+}
+
+/** 전문가 서류 파일 임시 열람 URL(관리자) */
+export async function getDocUrl(path: string): Promise<string | null> {
+  if (!supabase) return null;
+  const { data } = await supabase.storage.from('expert-docs').createSignedUrl(path, 300);
+  return data?.signedUrl ?? null;
+}
