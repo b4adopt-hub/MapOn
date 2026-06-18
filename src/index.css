@@ -117,3 +117,39 @@ select:focus,input:focus{border-color:var(--teal);box-shadow:0 0 0 3px var(--tea
 .mp-modal-btn:disabled{opacity:.6}
 .mp-modal-foot{font-size:12.5px;color:var(--muted);text-align:center;line-height:1.6}
 .mp-modal-foot a{color:var(--teal);font-weight:600;text-decoration:none}
+
+/* ── 건축물 정보 카드 ── */
+.bld-card{margin-top:16px;border:1px solid var(--line);background:var(--white);border-radius:14px;padding:16px}
+.bld-head{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.bld-title{font-weight:800;font-size:15px;color:var(--ink)}
+.bld-viol-tag{font-size:11.5px;font-weight:800;color:#fff;background:var(--warn);padding:3px 9px;border-radius:999px}
+.bld-viol{font-size:13px;color:var(--warn);background:#fdecec;border:1px solid #f3c6c6;border-radius:8px;padding:10px 12px;margin-bottom:12px;line-height:1.5;font-weight:600}
+.bld-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px 16px;margin-bottom:12px}
+.bld-grid>div{display:flex;flex-direction:column;gap:2px}
+.bld-grid span{font-size:12px;color:var(--muted)}.bld-grid strong{font-size:14px;font-weight:700}
+.bld-checklist,.bld-manual ul{margin-top:8px}
+.bld-cl-title{font-size:13px;font-weight:700;margin-bottom:8px;color:var(--teal-700)}
+.bld-card ul{margin:0;padding-left:18px}
+.bld-card li{font-size:12.5px;color:var(--muted);line-height:1.7}
+.bld-empty p,.bld-manual p{font-size:12.5px;color:var(--muted);line-height:1.6;margin:8px 0}
+.bld-empty{background:var(--bg)}
+.bld-manual{border-color:#ecd9b0;background:#fcf8ef}
+.bld-link{display:inline-block;margin-top:10px;font-size:13px;font-weight:700;color:var(--teal);text-decoration:none;background:var(--teal-50);padding:9px 14px;border-radius:10px;border:1px solid #c3e3d1}
+.bld-link:hover{background:#dcefe6}
+
+/* ── 기반시설 확인 카드 ── */
+.infra-card{margin-top:16px;border:1px solid var(--line);background:var(--white);border-radius:14px;padding:16px}
+.infra-head{display:flex;align-items:baseline;gap:8px;margin-bottom:8px}
+.infra-title{font-weight:800;font-size:15px;color:var(--ink)}
+.infra-sub{font-size:12px;color:var(--muted)}
+.infra-lead{font-size:12.5px;color:var(--muted);line-height:1.6;margin:0 0 12px}
+.infra-item{border:1px solid var(--line);border-radius:10px;margin-bottom:8px;overflow:hidden}
+.infra-item.open{border-color:var(--teal)}
+.infra-item-head{width:100%;display:flex;justify-content:space-between;align-items:center;padding:12px 14px;background:var(--bg);border:none;cursor:pointer;font-size:14px;font-weight:700;color:var(--ink)}
+.infra-item.open .infra-item-head{background:var(--teal-50);color:var(--teal-700)}
+.infra-toggle{font-size:18px;font-weight:700;color:var(--teal)}
+.infra-item-body{padding:12px 14px}
+.infra-item-lead{font-size:12.5px;color:var(--warn);line-height:1.55;margin:0 0 8px;font-weight:600}
+.infra-item-body ul{margin:0;padding-left:18px}
+.infra-item-body li{font-size:12.5px;color:var(--ink);line-height:1.7}
+.infra-contact{margin-top:10px;font-size:12px;color:var(--teal-700);background:var(--teal-50);border-radius:8px;padding:8px 10px;font-weight:600}
