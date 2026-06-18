@@ -3,6 +3,8 @@ import { diagnose, LandInput, DiagnosisResult } from './engine/diagnose';
 import { Purpose, PURPOSE_LABELS } from './engine/purposes';
 import { fetchOrdinance, OrdinanceResult } from './engine/ordinance';
 import { supabase, supabaseReady } from './lib/supabase';
+import { useAuth } from './lib/useAuth';
+import AuthModal from './components/AuthModal';
 import LandMap from './components/LandMap';
 
 const PURPOSES = Object.keys(PURPOSE_LABELS) as Purpose[];
@@ -29,6 +31,8 @@ const FN_BASE = (import.meta.env.VITE_SUPABASE_URL as string|undefined)
   : 'https://irijchducsbsohzocmbk.supabase.co/functions/v1';
 
 export default function App() {
+  const auth = useAuth();
+  const [showAuth, setShowAuth] = useState(false);
   const [address, setAddress] = useState('경기도 가평군 상면 비룡로 2268-38');
   const [looking, setLooking] = useState(false);
   const [lookupErr, setLookupErr] = useState<string|null>(null);
@@ -147,6 +151,21 @@ export default function App() {
 
   return (
     <div className="page">
+      <div className="mp-topbar">
+        {auth.userId ? (
+          <span className="mp-user">
+            {auth.displayName ?? auth.email}님
+            {auth.isExpert && <span className="mp-user-tag">{auth.expertStatus === 'approved' ? '전문가' : '전문가 심사중'}</span>}
+            <button className="mp-link-btn" onClick={auth.signOut}>로그아웃</button>
+          </span>
+        ) : (
+          <span className="mp-user">
+            <a className="mp-link-btn" href="/expert">전문가 가입</a>
+            <button className="mp-link-btn primary" onClick={() => setShowAuth(true)}>로그인 / 회원가입</button>
+          </span>
+        )}
+      </div>
+      {showAuth && <AuthModal onClose={() => setShowAuth(false)} signIn={auth.signIn} signUp={auth.signUp} />}
       <header className="hero">
         <div className="brand">
           <svg className="brand-pin" viewBox="0 0 36 46" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
