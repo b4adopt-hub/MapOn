@@ -93,3 +93,27 @@ select:focus,input:focus{border-color:var(--teal);box-shadow:0 0 0 3px var(--tea
 .hero .brand+.brand-ground{margin-top:1px}
 
 @media(prefers-reduced-motion:reduce){.brand-pin{animation:none}}
+
+/* ── 상단바 / 인증 ── */
+.mp-topbar{display:flex;justify-content:flex-end;align-items:center;padding:12px 0 0;min-height:32px}
+.mp-user{display:inline-flex;align-items:center;gap:10px;font-size:13px;color:var(--muted)}
+.mp-user-tag{font-size:11px;font-weight:700;color:var(--teal);background:var(--teal-50);padding:2px 8px;border-radius:999px}
+.mp-link-btn{font-size:13px;font-weight:600;color:var(--muted);background:none;border:none;cursor:pointer;text-decoration:none;padding:4px 6px}
+.mp-link-btn:hover{color:var(--teal)}
+.mp-link-btn.primary{color:#fff;background:var(--teal);border-radius:8px;padding:7px 14px;font-weight:700}
+.mp-link-btn.primary:hover{background:var(--teal-700)}
+
+.mp-modal-bg{position:fixed;inset:0;background:rgba(20,36,31,.5);display:flex;align-items:center;justify-content:center;z-index:1000;padding:20px}
+.mp-modal{background:#fff;border-radius:16px;padding:28px;width:360px;max-width:100%;display:flex;flex-direction:column;gap:12px}
+.mp-modal-tabs{display:flex;gap:6px;margin-bottom:6px}
+.mp-modal-tabs button{flex:1;padding:10px;font-size:14px;font-weight:700;border:none;background:#f0f3f5;color:var(--muted);border-radius:8px;cursor:pointer}
+.mp-modal-tabs button.on{background:var(--teal);color:#fff}
+.mp-input{width:100%;padding:12px 14px;font-size:15px;border:1px solid var(--line);border-radius:10px;outline:none;box-sizing:border-box}
+.mp-input:focus{border-color:var(--teal);box-shadow:0 0 0 3px var(--teal-50)}
+.mp-modal-err{font-size:13px;color:var(--warn);background:#fdecec;border-radius:8px;padding:9px 11px}
+.mp-modal-msg{font-size:13px;color:var(--teal-700);background:var(--teal-50);border-radius:8px;padding:9px 11px;line-height:1.5}
+.mp-modal-btn{padding:13px;font-size:15px;font-weight:800;color:#fff;background:var(--teal);border:none;border-radius:10px;cursor:pointer}
+.mp-modal-btn:hover{background:var(--teal-700)}
+.mp-modal-btn:disabled{opacity:.6}
+.mp-modal-foot{font-size:12.5px;color:var(--muted);text-align:center;line-height:1.6}
+.mp-modal-foot a{color:var(--teal);font-weight:600;text-decoration:none}
