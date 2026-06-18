@@ -9,7 +9,7 @@
  * "확인 필요" 신호로 처리한다.
  *
  * 접도(맹지) 항목은 land-lookup이 인접 필지 지목을 분석해 전달하는
- * roadAccess 결과를 반영한다(막연한 "확인하세요"가 아니라 근거 기반 안내).
+ * roadAccess 결과 + 토지특성정보(도로접면 공부값)를 함께 반영한다.
  */
 
 import { matchZone, ZoneInfo } from './zones';
@@ -42,6 +42,11 @@ export interface LandInput {
     adjacentJimoks: string[];
     message: string;
   } | null;
+  /** 토지특성정보(공부값) — land-characteristics가 제공. 도로접면 등급 */
+  roadSideName?: string | null;          // 도로접면 명칭(예: 광대한면/중로한면/세로(가)/맹지)
+  roadSideLevel?: 'good' | 'normal' | 'weak' | 'blind' | 'unknown' | null;
+  /** 지형고저(공부값) — 평지/완경사/급경사 등 */
+  topographyName?: string | null;
 }
 
 /** 위험 항목 1건 */
@@ -161,19 +166,18 @@ function jimokRisks(input: LandInput, purpose: Purpose): { risks: RiskItem[]; gr
   return { risks, gradeAdj };
 }
 
-/** 경사 기반 위험 신호 */
+/** 경사 기반 위험 신호 (사용자 입력 경사% + 토지특성 지형고저 공부값) */
 function slopeRisks(input: LandInput): RiskItem[] {
   const risks: RiskItem[] = [];
   const s = input.slopePercent;
-  if (s == null) return risks;
-  if (s >= 25) {
+  if (s != null && s >= 25) {
     risks.push({
       key: 'slope_high',
       label: '급경사 주의',
       level: 'warning',
       note: `땅 기울기가 약 ${s}%로 꽤 가파릅니다. 평평하게 만드는 흙 작업·옹벽·물 빠짐 공사가 추가로 들어 비용이 크게 늘 수 있고, 너무 가파르면 건축 허가가 안 날 수도 있습니다.`,
     });
-  } else if (s >= 15) {
+  } else if (s != null && s >= 15) {
     risks.push({
       key: 'slope_mid',
       label: '경사 검토',
@@ -181,7 +185,70 @@ function slopeRisks(input: LandInput): RiskItem[] {
       note: `땅 기울기가 약 ${s}% 정도입니다. 약간 경사가 있어 기초·물 빠짐 공사 비용이 조금 더 들 수 있으니 예산에 감안하세요.`,
     });
   }
+
+  // 토지특성 지형고저(공부값) — 사용자가 경사를 입력하지 않았어도 공부상 경사 신호를 잡는다.
+  const t = (input.topographyName ?? '').trim();
+  if (t && /급경사/.test(t)) {
+    risks.push({
+      key: 'topo_steep',
+      label: '공부상 급경사지',
+      level: 'warning',
+      note: '공적 장부(토지특성)에 이 땅이 "급경사"로 등재돼 있습니다. 평탄화·옹벽·배수에 토목비가 크게 들 수 있고, 경사가 심하면 개발행위허가가 제한될 수 있습니다. 현장 경사와 토목 견적을 반드시 확인하세요.',
+    });
+  } else if (t && /완경사/.test(t)) {
+    risks.push({
+      key: 'topo_mild',
+      label: '공부상 완경사',
+      level: 'caution',
+      note: '공적 장부상 "완경사"로 등재된 땅입니다. 약간의 성토·기초·배수 비용을 예산에 감안하세요.',
+    });
+  }
   return risks;
+}
+
+/** 도로접면(토지특성 공부값) 기반 맹지·접도 판정 — land-lookup 인접분석보다 직접적 */
+function roadSideRisks(input: LandInput, purpose: Purpose): { risks: RiskItem[]; gradeAdj: Grade | null } {
+  const risks: RiskItem[] = [];
+  let gradeAdj: Grade | null = null;
+  const level = input.roadSideLevel;
+  const name = (input.roadSideName ?? '').trim();
+  if (!level || level === 'unknown' || !name) return { risks, gradeAdj };
+
+  // 건축류 목적 — 접도가 사용성/허가에 직결되는 용도
+  const BUILD: Purpose[] = ['house', 'warehouse', 'cafe', 'petfacility', 'camping', 'farmhut', 'parking'];
+  const isBuild = BUILD.includes(purpose);
+
+  if (level === 'blind') {
+    risks.push({
+      key: 'roadside_blind',
+      label: '공부상 맹지 — 도로 미접',
+      level: 'warning',
+      note: `공적 장부(토지특성)상 도로접면이 "${name}"으로, 도로에 접하지 않은 맹지로 등재돼 있습니다. 맹지는 건축 허가가 나지 않는 경우가 많습니다. 다만 지적도에 없는 현황도로·도로지분·통행권으로 진입이 가능한 사례도 있으니, 진입로 확보 방법을 매입 전 반드시 확인하세요.`,
+    });
+    if (isBuild) gradeAdj = 'risky';
+  } else if (level === 'weak') {
+    risks.push({
+      key: 'roadside_weak',
+      label: '좁은 도로 접함 — 대형차 주의',
+      level: 'caution',
+      note: `공부상 도로접면이 "${name}"으로, 자동차 통행이 어려운 좁은 도로에 접해 있습니다. 일반 승용차는 가능해도 대형차·소방차 진입이나 회차가 어려울 수 있습니다. 창고·공장·다중이용 용도면 도로 폭과 진입을 현장에서 꼭 확인하세요.`,
+    });
+  } else if (level === 'normal') {
+    risks.push({
+      key: 'roadside_normal',
+      label: '도로 접함 (공부 확인)',
+      level: 'info',
+      note: `공부상 도로접면이 "${name}"으로, 도로에 접한 것으로 등재돼 있습니다. 다만 공부상 접면과 실제 건축법상 도로(폭 4m 등) 인정 여부는 다를 수 있으니 도로 폭·현황을 확인하세요.`,
+    });
+  } else if (level === 'good') {
+    risks.push({
+      key: 'roadside_good',
+      label: '도로 접함 양호 (공부 확인)',
+      level: 'info',
+      note: `공부상 도로접면이 "${name}"으로, 비교적 넓은 도로에 접한 것으로 등재돼 있습니다. 접도 측면은 양호한 편입니다(실제 도로 폭·현황은 별도 확인 권장).`,
+    });
+  }
+  return { risks, gradeAdj };
 }
 
 /** 규제 신호 → 위험 항목 + 등급 하향 */
@@ -282,6 +349,7 @@ function buildRecommendations(purpose: Purpose, input: LandInput): string[] {
       recs.push(PURPOSE_LABELS[purpose]);
   }
   if ((input.slopePercent ?? 0) >= 15) recs.push('성토·기초공사', '배수공사');
+  if (/급경사/.test(input.topographyName ?? '')) recs.push('옹벽·평탄화', '배수공사');
   return recs;
 }
 
@@ -336,7 +404,7 @@ export function diagnose(input: LandInput, purpose: Purpose): DiagnosisResult {
   riskItems.push(...j.risks);
   if (j.gradeAdj) grade = worseGrade(grade, j.gradeAdj);
 
-  // 3) 경사 신호
+  // 3) 경사 신호 (사용자 입력 + 토지특성 지형 공부값)
   riskItems.push(...slopeRisks(input));
 
   // 4) 규제 신호 (가장 강한 하향 요인)
@@ -344,27 +412,35 @@ export function diagnose(input: LandInput, purpose: Purpose): DiagnosisResult {
   riskItems.push(...r.risks);
   if (r.gradeAdj) grade = worseGrade(grade, r.gradeAdj);
 
-  // 5) 접도(맹지) — land-lookup의 인접 도로 확인 결과를 반영
-  const ra = input.roadAccess;
-  if (ra && ra.status !== 'unknown') {
-    const level: RiskItem['level'] =
-      ra.status === 'direct_road' ? 'info' : ra.status === 'ditch' ? 'caution' : 'warning';
-    const adj = ra.adjacentJimoks?.length ? ` (인접 지목: ${ra.adjacentJimoks.join('·')})` : '';
-    riskItems.push({
-      key: 'road_access',
-      label: ra.status === 'direct_road' ? '도로 접함 확인'
-        : ra.status === 'ditch' ? '구거·하천 인접 (진입 가능성 검토)'
-        : '도로 접함 미확인 (현황도로·지분 확인)',
-      level,
-      note: ra.message + adj,
-    });
+  // 5) 접도(맹지) — 토지특성 도로접면(공부값) 우선, 없으면 land-lookup 인접분석
+  const rs = roadSideRisks(input, purpose);
+  if (rs.risks.length > 0) {
+    // 공부상 도로접면 데이터가 있으면 이를 우선 사용
+    riskItems.push(...rs.risks);
+    if (rs.gradeAdj) grade = worseGrade(grade, rs.gradeAdj);
   } else {
-    riskItems.push({
-      key: 'road_access',
-      label: '접도 확인 권고',
-      level: 'info',
-      note: '땅에 차가 드나들 도로가 붙어 있는지 꼭 확인하세요. 도로가 없는 땅(맹지)은 건축 허가가 안 나는 경우가 많습니다. 다만 지적도에 안 나오는 현황도로나 도로지분 보유로 진입이 가능한 경우도 있으니, 진입 이력을 함께 확인하세요.',
-    });
+    // 도로접면 공부값이 없을 때만 인접 지목 기반 추정으로 폴백
+    const ra = input.roadAccess;
+    if (ra && ra.status !== 'unknown') {
+      const level: RiskItem['level'] =
+        ra.status === 'direct_road' ? 'info' : ra.status === 'ditch' ? 'caution' : 'warning';
+      const adj = ra.adjacentJimoks?.length ? ` (인접 지목: ${ra.adjacentJimoks.join('·')})` : '';
+      riskItems.push({
+        key: 'road_access',
+        label: ra.status === 'direct_road' ? '도로 접함 확인'
+          : ra.status === 'ditch' ? '구거·하천 인접 (진입 가능성 검토)'
+          : '도로 접함 미확인 (현황도로·지분 확인)',
+        level,
+        note: ra.message + adj,
+      });
+    } else {
+      riskItems.push({
+        key: 'road_access',
+        label: '접도 확인 권고',
+        level: 'info',
+        note: '땅에 차가 드나들 도로가 붙어 있는지 꼭 확인하세요. 도로가 없는 땅(맹지)은 건축 허가가 안 나는 경우가 많습니다. 다만 지적도에 안 나오는 현황도로나 도로지분 보유로 진입이 가능한 경우도 있으니, 진입 이력을 함께 확인하세요.',
+      });
+    }
   }
 
   // 6) 트리거
