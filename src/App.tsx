@@ -19,6 +19,13 @@ const DISCLAIMER_FULL = '본 서비스는 공공데이터와 사용자가 입력
 
 interface UseZone { name:string; code:string; conflict:string; isPrimary:boolean }
 interface RoadAccess { status:'direct_road'|'ditch'|'none'|'unknown'; adjacentJimoks:string[]; message:string; roadOwnership?:'gov'|'private'|'mixed'|'unknown'; roadOwnerNote?:string }
+interface BuildingInfo {
+  hasBuilding:boolean; count:number;
+  bldNm?:string|null; mainPurpose?:string|null; etcPurpose?:string|null; structure?:string|null;
+  totArea?:number|null; archArea?:number|null; bcRat?:number|null; vlRat?:number|null;
+  grndFlr?:number|null; ugrndFlr?:number|null; useAprDay?:string|null;
+  violation?:boolean; violationNote?:string|null;
+}
 interface LandLookup {
   pnu:string|null; address:string|null; jimok:string|null; areaSqm:number|null; areaPyeong:number|null;
   officialPrice:number|null; primaryUseZone:string|null; useZones:UseZone[]; regulations:string[];
@@ -30,6 +37,12 @@ const FN_BASE = (import.meta.env.VITE_SUPABASE_URL as string|undefined)
   ? `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`
   : 'https://irijchducsbsohzocmbk.supabase.co/functions/v1';
 
+function fmtDate(yyyymmdd:string):string{
+  const d=(yyyymmdd||'').replace(/[^0-9]/g,'');
+  if(d.length!==8)return yyyymmdd;
+  return `${d.slice(0,4)}.${d.slice(4,6)}.${d.slice(6,8)}`;
+}
+
 export default function App() {
   const auth = useAuth();
   const [showAuth, setShowAuth] = useState(false);
@@ -37,6 +50,8 @@ export default function App() {
   const [looking, setLooking] = useState(false);
   const [lookupErr, setLookupErr] = useState<string|null>(null);
   const [land, setLand] = useState<LandLookup|null>(null);
+  const [building, setBuilding] = useState<BuildingInfo|null>(null);
+  const [bldChecked, setBldChecked] = useState(false);
 
   const [useZoneRaw, setUseZone] = useState('계획관리지역');
   const [jimok, setJimok] = useState('대');
@@ -67,6 +82,7 @@ export default function App() {
   async function lookup(){
     if(!address.trim())return;
     setLooking(true); setLookupErr(null); setResults([]); setAiText(null); setAiErr(null);
+    setBuilding(null); setBldChecked(false);
     try{
       let data:LandLookup;
       if(supabaseReady && supabase){
@@ -84,8 +100,27 @@ export default function App() {
       if(data.jimok)setJimok(data.jimok);
       if(data.areaSqm!=null)setArea(String(Math.round(data.areaSqm)));
       setRegs(normalizeRegs(data.regulations||[]));
+      // 건축물 조회(별도 함수, 키 없으면 building:null)
+      if(data.pnu){
+        fetchBuilding(data.pnu).then(b=>{ setBuilding(b); setBldChecked(true); }).catch(()=>setBldChecked(true));
+      }
     }catch(e){ setLookupErr(e instanceof Error?e.message:String(e)); setLand(null); }
     finally{ setLooking(false); }
+  }
+
+  async function fetchBuilding(pnu:string):Promise<BuildingInfo|null>{
+    try{
+      let data:any;
+      if(supabaseReady && supabase){
+        const res=await supabase.functions.invoke('building-lookup',{body:{pnu}});
+        if(res.error)return null;
+        data=res.data;
+      }else{
+        const r=await fetch(`${FN_BASE}/building-lookup`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pnu})});
+        data=await r.json();
+      }
+      return data?.building ?? null;
+    }catch{ return null; }
   }
 
   function buildInput():LandInput{
@@ -223,6 +258,54 @@ export default function App() {
                 {land.roadAccess.roadOwnership==='mixed' && '접한 도로 국공유·사유 혼재 — 실제 진입에 쓰는 도로가 어느 쪽인지 확인 필요'}
               </div>
             )}
+          </div>
+        )}
+
+        {land && bldChecked && building?.hasBuilding && (
+          <div className="bld-card">
+            <div className="bld-head">
+              <span className="bld-title">건축물 있음{building.count>1?` · ${building.count}동`:''}</span>
+              {building.violation && <span className="bld-viol-tag">위반건축물</span>}
+            </div>
+            {building.violation && (
+              <div className="bld-viol">{building.violationNote}</div>
+            )}
+            <div className="bld-grid">
+              {building.bldNm && <div><span>건물명</span><strong>{building.bldNm}</strong></div>}
+              {building.mainPurpose && <div><span>주용도</span><strong>{building.mainPurpose}</strong></div>}
+              {building.structure && <div><span>구조</span><strong>{building.structure}</strong></div>}
+              {building.totArea!=null && <div><span>연면적</span><strong>{building.totArea.toLocaleString()}㎡</strong></div>}
+              {(building.grndFlr!=null||building.ugrndFlr!=null) && <div><span>층수</span><strong>지상 {building.grndFlr??0} / 지하 {building.ugrndFlr??0}</strong></div>}
+              {building.useAprDay && <div><span>사용승인일</span><strong>{fmtDate(building.useAprDay)}</strong></div>}
+            </div>
+            <div className="bld-checklist">
+              <div className="bld-cl-title">기존 건물이 있는 토지 — 확인 항목</div>
+              <ul>
+                <li>위반건축물 여부(불법 증축·용도변경) — 이행강제금·대출·매매 제약 확인</li>
+                <li>사용승인일 기준 노후도 — 리모델링/재건축 시 비용·구조 안전 검토</li>
+                <li>현재 용도와 원하는 용도의 일치 여부 — 용도변경 가능성 확인</li>
+                <li>건물 철거 시 철거비·멸실신고, 신축 시 현행 건폐율·용적률 재적용</li>
+              </ul>
+            </div>
+          </div>
+        )}
+        {land && bldChecked && building && !building.hasBuilding && (
+          <div className="bld-card bld-empty">
+            <span className="bld-title">건축물대장상 건물 없음</span>
+            <p>이 필지에는 등록된 건축물이 확인되지 않습니다(나대지일 가능성). 단, 미등기·무허가 건물이 현장에 있을 수 있으니 현장 확인을 권합니다.</p>
+          </div>
+        )}
+        {land && bldChecked && building===null && (
+          <div className="bld-card bld-manual">
+            <div className="bld-cl-title">이 토지에 건축물이 있나요?</div>
+            <p>건축물이 있다면 <b>건축물대장</b>에서 다음을 반드시 확인하세요. 위반건축물은 이행강제금·대출·매매에 큰 제약이 됩니다.</p>
+            <ul>
+              <li>위반건축물 여부(불법 증축·용도변경)</li>
+              <li>사용승인일(노후도)·구조·주용도</li>
+              <li>원하는 용도로의 용도변경 가능성</li>
+              <li>철거 후 신축 시 현행 건폐율·용적률 재적용</li>
+            </ul>
+            <a className="bld-link" href="https://www.gov.kr/portal/service/serviceInfo/PTR000050064" target="_blank" rel="noopener noreferrer">정부24 건축물대장 발급 ↗</a>
           </div>
         )}
 
