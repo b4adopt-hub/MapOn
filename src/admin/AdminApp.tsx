@@ -4,11 +4,12 @@ import { useAuth } from './useAuth';
 import {
   fetchMembers, fetchLookups, fetchWatches, fetchStats,
   updateMember, acknowledgeWatch,
-  MemberRow, LookupRow, WatchRow, Stats,
+  fetchExperts, reviewExpert, getDocUrl,
+  MemberRow, LookupRow, WatchRow, Stats, ExpertAdminRow,
 } from './adminData';
 import './admin.css';
 
-type Tab = 'dashboard' | 'members' | 'lookups' | 'ordinance';
+type Tab = 'dashboard' | 'members' | 'experts' | 'lookups' | 'ordinance';
 
 export default function AdminApp() {
   const auth = useAuth();
@@ -74,6 +75,7 @@ function AdminShell({ email, onSignOut }: { email: string | null; onSignOut: () 
         <nav>
           <button className={tab === 'dashboard' ? 'on' : ''} onClick={() => setTab('dashboard')}>대시보드</button>
           <button className={tab === 'members' ? 'on' : ''} onClick={() => setTab('members')}>회원 관리</button>
+          <button className={tab === 'experts' ? 'on' : ''} onClick={() => setTab('experts')}>전문가 승인</button>
           <button className={tab === 'lookups' ? 'on' : ''} onClick={() => setTab('lookups')}>매물분석 기록</button>
           <button className={tab === 'ordinance' ? 'on' : ''} onClick={() => setTab('ordinance')}>조례 변경</button>
         </nav>
@@ -85,6 +87,7 @@ function AdminShell({ email, onSignOut }: { email: string | null; onSignOut: () 
       <main className="adm-main">
         {tab === 'dashboard' && <DashboardTab />}
         {tab === 'members' && <MembersTab />}
+        {tab === 'experts' && <ExpertsTab />}
         {tab === 'lookups' && <LookupsTab />}
         {tab === 'ordinance' && <OrdinanceTab />}
       </main>
@@ -193,6 +196,86 @@ function MembersTab() {
   );
 }
 
+const EXPERT_TYPE_LABEL: Record<string, string> = {
+  realtor: '공인중개사', legal: '법무사', architect: '건축사', appraiser: '감정평가사',
+  auction: '경매 전문가', field: '임장 대행', civil: '토목·개발행위', other: '기타',
+};
+const EXPERT_STATUS_LABEL: Record<string, string> = {
+  pending: '작성중', reviewing: '심사중', revision: '보완요청',
+  approved: '승인', restricted: '제한', suspended: '정지', withdrawn: '탈퇴', docs_required: '서류필요',
+};
+
+function ExpertsTab() {
+  const { data, err, loading, reload } = useAsync<ExpertAdminRow[]>(fetchExperts, []);
+  const [sel, setSel] = useState<ExpertAdminRow | null>(null);
+
+  async function act(id: string, status: string) {
+    let note: string | null = null;
+    if (status === 'revision' || status === 'restricted' || status === 'suspended') {
+      note = prompt('사유/메모를 입력하세요(전문가에게 표시):', '') ?? null;
+    }
+    const e = await reviewExpert(id, status, note);
+    if (e) alert('처리 실패: ' + e); else { setSel(null); reload(); }
+  }
+  async function openDoc(path: string | null) {
+    if (!path) { alert('파일 없음'); return; }
+    const url = await getDocUrl(path);
+    if (url) window.open(url, '_blank'); else alert('파일 열기 실패');
+  }
+
+  return (
+    <Panel title="전문가 승인">
+      {loading ? <p className="adm-muted">불러오는 중…</p> :
+       err ? <div className="adm-err">{err}</div> :
+       (data!.length === 0 ? <p className="adm-muted">전문가 신청이 없습니다.</p> :
+        <table className="adm-table">
+          <thead><tr><th>이름</th><th>유형</th><th>지역</th><th>사무소</th><th>상태</th><th>신청일</th><th></th></tr></thead>
+          <tbody>
+            {data!.map(x => (
+              <tr key={x.id} className={x.status === 'reviewing' ? 'adm-row-alert' : ''}>
+                <td>{x.name}</td>
+                <td>{EXPERT_TYPE_LABEL[x.expert_type] ?? x.expert_type}</td>
+                <td>{x.region ?? '-'}</td>
+                <td>{x.office_name ?? '-'}</td>
+                <td><span className={`adm-badge ${x.status === 'approved' ? 'ok' : x.status === 'reviewing' ? 'alert' : ''}`}>{EXPERT_STATUS_LABEL[x.status] ?? x.status}</span></td>
+                <td className="adm-nowrap">{x.created_at?.slice(0, 10)}</td>
+                <td><button className="adm-btn sm" onClick={() => setSel(x)}>상세</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>)}
+
+      {sel && (
+        <div className="adm-modal-bg" onClick={() => setSel(null)}>
+          <div className="adm-modal" onClick={e => e.stopPropagation()}>
+            <h3>{sel.name} · {EXPERT_TYPE_LABEL[sel.expert_type] ?? sel.expert_type}</h3>
+            <div className="adm-kv"><span>휴대폰</span><b>{sel.phone ?? '-'}</b></div>
+            <div className="adm-kv"><span>활동지역</span><b>{sel.region ?? '-'}</b></div>
+            <div className="adm-kv"><span>사무소명</span><b>{sel.office_name ?? '-'}</b></div>
+            <div className="adm-kv"><span>대표자</span><b>{sel.rep_name ?? '-'}</b></div>
+            <div className="adm-kv"><span>사업자번호</span><b>{sel.biz_no ?? '-'}</b></div>
+            <div className="adm-kv"><span>자격/등록번호</span><b>{sel.license_no ?? '-'}</b></div>
+            <div className="adm-kv"><span>사무소주소</span><b>{sel.office_addr ?? '-'}</b></div>
+            <div className="adm-kv"><span>활동분야</span><b>{sel.fields?.join(', ') ?? '-'}</b></div>
+            {sel.intro && <div className="adm-kv"><span>소개</span><b>{sel.intro}</b></div>}
+            <div className="adm-doc-row">
+              <button className="adm-btn sm" onClick={() => openDoc(sel.license_file)} disabled={!sel.license_file}>자격증 보기</button>
+              <button className="adm-btn sm" onClick={() => openDoc(sel.biz_file)} disabled={!sel.biz_file}>사업자등록증 보기</button>
+            </div>
+            {sel.review_note && <div className="adm-err" style={{ marginTop: 10 }}>이전 메모: {sel.review_note}</div>}
+            <div className="adm-modal-actions">
+              <button className="adm-btn primary" onClick={() => act(sel.id, 'approved')}>승인</button>
+              <button className="adm-btn" onClick={() => act(sel.id, 'revision')}>보완 요청</button>
+              <button className="adm-btn" onClick={() => act(sel.id, 'suspended')}>정지</button>
+              <button className="adm-btn ghost" onClick={() => setSel(null)}>닫기</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </Panel>
+  );
+}
+
 function LookupsTab() {
   const { data, err, loading } = useAsync<LookupRow[]>(() => fetchLookups(200), []);
   return (
@@ -248,7 +331,7 @@ function OrdinanceTab() {
             ))}
           </tbody>
         </table>}
-      <p className="adm-muted adm-small">매일 새벽 자동 점검됩니다. '변경 감지'는 조례 시행일이 바뀜 항목입니다. 본문 확인 후 수치를 갱신하고 '확인 처리'로 기준일을 업데이트하세요.</p>
+      <p className="adm-muted adm-small">매일 새벽 자동 점검됩니다. '변경 감지'는 조례 시행일이 바뀐 항목입니다. 본문 확인 후 수치를 갱신하고 '확인 처리'로 기준일을 업데이트하세요.</p>
     </Panel>
   );
 }
