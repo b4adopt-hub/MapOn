@@ -49,52 +49,140 @@ function infraOutlying(zone:string|null):boolean{
   return /(농림|관리지역|계획관리|생산관리|보전관리|녹지|자연환경보전)/.test(zone);
 }
 
-interface InfraGroup { key:string; title:string; lead:string; items:string[]; contact:string }
+// 데이터 등급: A=자동확정 B=자동추정 C=기관확인 D=현장확인
+type DataGrade = 'A'|'B'|'C'|'D';
+const GRADE_META: Record<DataGrade,{label:string;cls:string}> = {
+  A:{label:'자동 확정',cls:'g-a'},
+  B:{label:'자동 추정',cls:'g-b'},
+  C:{label:'기관 확인',cls:'g-c'},
+  D:{label:'현장 확인',cls:'g-d'},
+};
+
+interface InfraGroup {
+  key:string; title:string; grade:DataGrade; danger?:number; // danger: 1~5 = 돈 터지는 순위
+  lead:string; items:string[]; purposeNote?:string; contact:string;
+}
+// 문서 기준: 가장 위험한 5개(도로·오수·전기·배수·인허가)를 danger로 표시하고 상단 정렬
 const INFRA_GROUPS: InfraGroup[] = [
   {
-    key:'elec', title:'전기',
+    key:'road', title:'도로 (접도)', grade:'B', danger:1,
+    lead:'도로는 토지의 생명줄입니다. 접도가 안 되면 건축·대형차·사용성이 한 번에 무너집니다. 지적도상 도로·현황도로·건축법상 도로는 서로 다릅니다.',
+    items:[
+      '지적도상 도로에 접하는지(맹지 여부)',
+      '현황도로가 건축법상 도로로 인정되는지',
+      '도로 폭·막다른 도로·회전반경(대형차 진입·회차)',
+      '사도·공유지분 도로면 토지사용승낙·통행권 필요 여부',
+      '진입로 경사·포장·제설 관리 주체',
+    ],
+    purposeNote:'창고·공장·근생이면 대형차 진입·회차 가능성을 현장에서 반드시 확인하세요.',
+    contact:'지자체 건축과·도로과 + 현장',
+  },
+  {
+    key:'sewage', title:'오수 (하수)', grade:'C', danger:2,
+    lead:'오수 처리가 안 되면 건축 허가 자체가 나지 않습니다. 토지·창고·근생에서 가장 자주 터지는 항목입니다.',
+    items:[
+      '공공하수처리구역인지, 공공하수관로 연결 가능한지',
+      '연결 불가 시 개인하수처리시설(정화조) 설치 의무·용량·비용',
+      '정화조 방류수 배출 경로(구거·하천) 확보, 분뇨차 진입 가능 여부',
+      '오수관로 연결 거리·원인자부담금',
+      '기존 건물이면 건축물대장상 정화조 용량·위치',
+    ],
+    purposeNote:'카페·식당·숙박은 오수 발생량이 많아 정화조 용량·방류가 자주 막힙니다.',
+    contact:'지자체 하수도과·상하수도사업소',
+  },
+  {
+    key:'elec', title:'전기', grade:'C', danger:3,
     lead:'인입 거리가 멀면 공사비가 수백만~수천만 원까지 늘 수 있습니다. 한전 무료인입 한계는 통상 200m입니다.',
     items:[
       '인근 전주(전봇대)가 필지 앞 도로에 있는지, 거리 200m 이내인지',
       '전주 신설·타인 토지 통과가 필요한지(인입 공사비 좌우)',
       '한전 계량기 설치 가능 여부, 기존 전기 사용 이력',
-      '단상/삼상·저압/고압, 증설·변압기 용량 여유(부하 큰 경우)',
-      '용도에 따른 전기 종별(주택=주택용, 농막·축사=농사용, 공장=산업용)',
+      '단상/삼상·저압/고압, 증설·변압기 용량 여유',
+      '용도별 전기 종별(주택용/농사용/산업용)',
     ],
-    contact:'한전 국번없이 123 · 사이버지점(en.kepco.co.kr)',
+    purposeNote:'공장·창고·냉동·기계 사용이면 삼상 전기·변압기 용량이 핵심입니다.',
+    contact:'한전 국번없이 123 · 사이버지점',
   },
   {
-    key:'water', title:'상수도',
+    key:'storm', title:'우수 (빗물 배수)', grade:'D', danger:4,
+    lead:'오수와 다릅니다. 빗물이 빠질 곳이 없으면 침수·토사 유출이 생기고 토목비가 커집니다.',
+    items:[
+      '배수로·도로 측구·구거로 물이 빠지는 경로가 있는지',
+      '주변보다 낮은 저지대·논 매립지·하천 옆 침수 위험',
+      '필지 경사 방향, 장마철 침수 이력',
+      '경사지면 옹벽·성토·집수정·우수관 필요 여부',
+      '마당 포장 시 배수계획, 인접지 유출 분쟁 소지',
+    ],
+    purposeNote:'성토한 땅인데 배수계획이 없으면 비 올 때 물이 모입니다. 현장 확인이 가장 중요합니다.',
+    contact:'지자체 하수과·도로과 + 현장',
+  },
+  {
+    key:'permit', title:'인허가', grade:'B', danger:5,
+    lead:'용도지역·지목·개발행위가 원하는 용도와 안 맞으면 애초에 목적대로 못 씁니다.',
+    items:[
+      '용도지역상 원하는 용도(주택·창고·공장·근생·음식점·숙박) 가능 여부',
+      '지목이 대지가 아니면 농지전용·산지전용 필요 여부',
+      '개발행위허가 필요 여부·조건',
+      '가축사육제한구역·문화재·군사·상수원·환경 규제',
+      '매물 설명과 공부상 용도 불일치(창고라며 파는데 근생인 경우 등)',
+    ],
+    contact:'지자체 건축과·민원실 + 토지이용계획확인서',
+  },
+  {
+    key:'water', title:'상수도', grade:'C',
     lead:'상수도관이 도로에 매설돼 있어야 인입됩니다. 없으면 지하수(관정)를 직접 개발해야 합니다.',
     items:[
-      '앞 도로에 상수도관이 매설돼 있는지, 인입 가능 거리·분담금',
-      '상수도 미공급 지역이면 지하수(관정) 개발 가능 여부',
-      '관정 굴착 비용·수질검사·먹는물 적합 여부',
-      '상수원보호구역 등으로 지하수 개발이 제한되는지',
+      '앞 도로에 상수도관 매설 여부, 인입 거리·분담금, 기존 계량기',
+      '미공급 지역이면 지하수(관정) 개발 가능 여부·비용',
+      '관정 수질검사·먹는물 적합 여부',
+      '상수원보호구역 등 지하수 개발 제한 여부',
     ],
-    contact:'관할 지자체 상수도사업소',
+    purposeNote:'음식점·숙박·공장 등 물 사용 많은 용도면 급수 가능량을 확인하세요.',
+    contact:'지자체 상수도사업소',
   },
   {
-    key:'sewage', title:'오수(하수)',
-    lead:'오수 처리가 안 되면 건축 허가 자체가 나지 않습니다. 가장 자주 막히는 항목입니다.',
+    key:'gas', title:'가스 · 난방', grade:'C',
+    lead:'도시가스가 없으면 LPG·기름·전기난방을 써야 하고, 용도에 따라 연료가 제한됩니다.',
     items:[
-      '공공하수처리구역인지, 공공하수관로에 연결 가능한지',
-      '연결 불가 시 개인오수처리시설(정화조) 설치 의무·용량·비용',
-      '정화조 방류수 배출 경로(구거·하천) 확보 여부',
-      '오수관로 연결 거리·원인자부담금',
+      '도시가스 공급 지역인지',
+      'LPG 사용 시 저장공간·안전기준',
+      '기름·전기난방 가능 여부',
+      '음식점·제조시설 등 용도별 연료·환기 기준',
     ],
-    contact:'관할 지자체 하수도과',
+    contact:'지역 도시가스사 · LPG 공급사',
   },
   {
-    key:'storm', title:'우수(빗물 배수)',
-    lead:'빗물이 빠질 곳이 없으면 침수·토사 유출이 생기고, 배수 시설을 직접 만들어야 합니다.',
+    key:'tel', title:'통신', grade:'C',
+    lead:'외곽·산지에서는 인터넷·휴대폰 신호가 약하거나 설치가 어려울 수 있습니다.',
     items:[
-      '우수(빗물) 배수로·구거로 물이 빠지는 경로가 있는지',
-      '저지대·논 매립지 등 침수 위험 여부',
-      '경사지면 옹벽·배수관·집수정 설치 필요 여부',
-      '인접지로 물이 흘러 분쟁 소지가 없는지',
+      '인터넷·광케이블 설치 가능 지역인지',
+      '휴대폰 신호 상태',
+      'CCTV·보안·원격관제 설치 가능성',
     ],
-    contact:'관할 지자체 + 현장 확인',
+    purposeNote:'창고·사업장 운영이면 통신환경을 현장에서 확인하세요.',
+    contact:'KT·SKT·LGU+ 등 통신사',
+  },
+  {
+    key:'fire', title:'소방 · 안전', grade:'B',
+    lead:'소방차 진입과 소화전 거리는 창고·공장 용도에서 인허가에 직결됩니다.',
+    items:[
+      '소방차 진입·비상차량 회차 가능 도로 폭',
+      '인근 소화전 위치(반경 100~500m)',
+      '창고·공장 용도 소방기준, 건물 간 이격거리',
+      '주변 산림 인접(산불·이격) 여부',
+    ],
+    contact:'관할 소방서 + 건축사·소방시설업체',
+  },
+  {
+    key:'civil', title:'토목 · 지형', grade:'D',
+    lead:'보기에는 넓어도 경사·성토·암반이면 평탄화·옹벽에 토목비가 크게 듭니다.',
+    items:[
+      '경사도·진입로 경사, 성토·절토 흔적',
+      '옹벽 필요 여부, 지반·암반 상태',
+      '배수 방향·토사유출·산사태 위험지역 여부',
+      '마당 조성·평탄화 비용',
+    ],
+    contact:'토목설계사무소 + 현장',
   },
 ];
 
@@ -107,7 +195,7 @@ export default function App() {
   const [land, setLand] = useState<LandLookup|null>(null);
   const [building, setBuilding] = useState<BuildingInfo|null>(null);
   const [bldChecked, setBldChecked] = useState(false);
-  const [infraOpen, setInfraOpen] = useState<string|null>('elec');
+  const [infraOpen, setInfraOpen] = useState<string|null>('road');
 
   const [useZoneRaw, setUseZone] = useState('계획관리지역');
   const [jimok, setJimok] = useState('대');
@@ -266,7 +354,7 @@ export default function App() {
           <span className="brand-text">맵<span className="brand-ddang">땅</span></span>
         </div>
         <h1>지번을 넣기 전에, 먼저 살핍니다</h1>
-        <p className="sub">주소만 넣으면 용도지역·지목·면적·규제·도로 인접 여부를 자동 조회해, 활용 전 확인해야 할 위험 신호를 등급으로 보여줍니다. 확정 판정이 아닌 사전검토입니다.</p>
+        <p class="sub" className="sub">주소만 넣으면 용도지역·지목·면적·규제·도로 인접 여부를 자동 조회해, 활용 전 확인해야 할 위험 신호를 등급으로 보여줍니다. 확정 판정이 아닌 사전검토입니다.</p>
         <div className={`status ${supabaseReady?'on':'off'}`}>{supabaseReady?'Supabase 연결됨':'직접 호출 모드 (anon 키 미설정)'}</div>
       </header>
 
@@ -368,25 +456,37 @@ export default function App() {
         {land && (
           <div className="infra-card">
             <div className="infra-head">
-              <span className="infra-title">기반시설 확인 항목</span>
-              <span className="infra-sub">전기·상수도·오수·우수</span>
+              <span className="infra-title">기반시설 · 사용성 확인 항목</span>
+              <span className="infra-sub">10개 항목</span>
             </div>
             <p className="infra-lead">
-              기반시설은 공개 데이터로 자동 판정되지 않아, 직접 확인이 필요한 항목으로 정리했습니다.
+              맵땅은 <b>공공데이터로 알 수 있는 것</b>과 <b>기관·현장 확인이 필요한 것</b>을 나눠 보여줍니다.
+              각 항목의 등급을 확인하세요.
               {infraOutlying(land.primaryUseZone)
-                ? ' 이 토지는 도심 외곽(관리·농림·녹지 등)에 해당해, 기반시설이 갖춰지지 않았을 가능성이 상대적으로 높습니다. 아래 항목을 특히 꼼꼼히 확인하세요.'
-                : ' 도시지역이라도 필지별로 인입 여부가 다르니 아래 항목을 확인하세요.'}
+                ? ' 이 토지는 도심 외곽(관리·농림·녹지)이라 기반시설 미비 가능성이 상대적으로 높습니다.'
+                : ' 도시지역이라도 필지별로 인입 여부가 다릅니다.'}
             </p>
+            <div className="infra-legend">
+              {(['A','B','C','D'] as DataGrade[]).map(g=>(
+                <span key={g} className={`infra-badge ${GRADE_META[g].cls}`}>{g} {GRADE_META[g].label}</span>
+              ))}
+            </div>
+            <p className="infra-danger-note">★ 표시는 토지에서 돈이 가장 자주 터지는 핵심 항목입니다(도로·오수·전기·배수·인허가).</p>
             {INFRA_GROUPS.map(g=>(
-              <div key={g.key} className={`infra-item ${infraOpen===g.key?'open':''}`}>
+              <div key={g.key} className={`infra-item ${infraOpen===g.key?'open':''} ${g.danger?'danger':''}`}>
                 <button className="infra-item-head" onClick={()=>setInfraOpen(infraOpen===g.key?null:g.key)}>
-                  <span className="infra-item-title">{g.title}</span>
+                  <span className="infra-item-title">
+                    {g.danger && <span className="infra-star">★</span>}
+                    {g.title}
+                    <span className={`infra-badge sm ${GRADE_META[g.grade].cls}`}>{g.grade}</span>
+                  </span>
                   <span className="infra-toggle">{infraOpen===g.key?'−':'+'}</span>
                 </button>
                 {infraOpen===g.key && (
                   <div className="infra-item-body">
                     <p className="infra-item-lead">{g.lead}</p>
                     <ul>{g.items.map((it,i)=>(<li key={i}>{it}</li>))}</ul>
+                    {g.purposeNote && <div className="infra-purpose">용도 주의: {g.purposeNote}</div>}
                     <div className="infra-contact">확인처: {g.contact}</div>
                   </div>
                 )}
