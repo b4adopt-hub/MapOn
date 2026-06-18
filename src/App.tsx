@@ -43,6 +43,61 @@ function fmtDate(yyyymmdd:string):string{
   return `${d.slice(0,4)}.${d.slice(4,6)}.${d.slice(6,8)}`;
 }
 
+// 용도지역으로 기반시설 정비 수준의 약한 신호만 — 단정 아님
+function infraOutlying(zone:string|null):boolean{
+  if(!zone)return false;
+  return /(농림|관리지역|계획관리|생산관리|보전관리|녹지|자연환경보전)/.test(zone);
+}
+
+interface InfraGroup { key:string; title:string; lead:string; items:string[]; contact:string }
+const INFRA_GROUPS: InfraGroup[] = [
+  {
+    key:'elec', title:'전기',
+    lead:'인입 거리가 멀면 공사비가 수백만~수천만 원까지 늘 수 있습니다. 한전 무료인입 한계는 통상 200m입니다.',
+    items:[
+      '인근 전주(전봇대)가 필지 앞 도로에 있는지, 거리 200m 이내인지',
+      '전주 신설·타인 토지 통과가 필요한지(인입 공사비 좌우)',
+      '한전 계량기 설치 가능 여부, 기존 전기 사용 이력',
+      '단상/삼상·저압/고압, 증설·변압기 용량 여유(부하 큰 경우)',
+      '용도에 따른 전기 종별(주택=주택용, 농막·축사=농사용, 공장=산업용)',
+    ],
+    contact:'한전 국번없이 123 · 사이버지점(en.kepco.co.kr)',
+  },
+  {
+    key:'water', title:'상수도',
+    lead:'상수도관이 도로에 매설돼 있어야 인입됩니다. 없으면 지하수(관정)를 직접 개발해야 합니다.',
+    items:[
+      '앞 도로에 상수도관이 매설돼 있는지, 인입 가능 거리·분담금',
+      '상수도 미공급 지역이면 지하수(관정) 개발 가능 여부',
+      '관정 굴착 비용·수질검사·먹는물 적합 여부',
+      '상수원보호구역 등으로 지하수 개발이 제한되는지',
+    ],
+    contact:'관할 지자체 상수도사업소',
+  },
+  {
+    key:'sewage', title:'오수(하수)',
+    lead:'오수 처리가 안 되면 건축 허가 자체가 나지 않습니다. 가장 자주 막히는 항목입니다.',
+    items:[
+      '공공하수처리구역인지, 공공하수관로에 연결 가능한지',
+      '연결 불가 시 개인오수처리시설(정화조) 설치 의무·용량·비용',
+      '정화조 방류수 배출 경로(구거·하천) 확보 여부',
+      '오수관로 연결 거리·원인자부담금',
+    ],
+    contact:'관할 지자체 하수도과',
+  },
+  {
+    key:'storm', title:'우수(빗물 배수)',
+    lead:'빗물이 빠질 곳이 없으면 침수·토사 유출이 생기고, 배수 시설을 직접 만들어야 합니다.',
+    items:[
+      '우수(빗물) 배수로·구거로 물이 빠지는 경로가 있는지',
+      '저지대·논 매립지 등 침수 위험 여부',
+      '경사지면 옹벽·배수관·집수정 설치 필요 여부',
+      '인접지로 물이 흘러 분쟁 소지가 없는지',
+    ],
+    contact:'관할 지자체 + 현장 확인',
+  },
+];
+
 export default function App() {
   const auth = useAuth();
   const [showAuth, setShowAuth] = useState(false);
@@ -52,6 +107,7 @@ export default function App() {
   const [land, setLand] = useState<LandLookup|null>(null);
   const [building, setBuilding] = useState<BuildingInfo|null>(null);
   const [bldChecked, setBldChecked] = useState(false);
+  const [infraOpen, setInfraOpen] = useState<string|null>('elec');
 
   const [useZoneRaw, setUseZone] = useState('계획관리지역');
   const [jimok, setJimok] = useState('대');
@@ -306,6 +362,36 @@ export default function App() {
               <li>철거 후 신축 시 현행 건폐율·용적률 재적용</li>
             </ul>
             <a className="bld-link" href="https://www.gov.kr/portal/service/serviceInfo/PTR000050064" target="_blank" rel="noopener noreferrer">정부24 건축물대장 발급 ↗</a>
+          </div>
+        )}
+
+        {land && (
+          <div className="infra-card">
+            <div className="infra-head">
+              <span className="infra-title">기반시설 확인 항목</span>
+              <span className="infra-sub">전기·상수도·오수·우수</span>
+            </div>
+            <p className="infra-lead">
+              기반시설은 공개 데이터로 자동 판정되지 않아, 직접 확인이 필요한 항목으로 정리했습니다.
+              {infraOutlying(land.primaryUseZone)
+                ? ' 이 토지는 도심 외곽(관리·농림·녹지 등)에 해당해, 기반시설이 갖춰지지 않았을 가능성이 상대적으로 높습니다. 아래 항목을 특히 꼼꼼히 확인하세요.'
+                : ' 도시지역이라도 필지별로 인입 여부가 다르니 아래 항목을 확인하세요.'}
+            </p>
+            {INFRA_GROUPS.map(g=>(
+              <div key={g.key} className={`infra-item ${infraOpen===g.key?'open':''}`}>
+                <button className="infra-item-head" onClick={()=>setInfraOpen(infraOpen===g.key?null:g.key)}>
+                  <span className="infra-item-title">{g.title}</span>
+                  <span className="infra-toggle">{infraOpen===g.key?'−':'+'}</span>
+                </button>
+                {infraOpen===g.key && (
+                  <div className="infra-item-body">
+                    <p className="infra-item-lead">{g.lead}</p>
+                    <ul>{g.items.map((it,i)=>(<li key={i}>{it}</li>))}</ul>
+                    <div className="infra-contact">확인처: {g.contact}</div>
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         )}
 
