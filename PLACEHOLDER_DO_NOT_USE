@@ -1,4 +1,9 @@
-.adm-row-alert{background:#fdf4f4}
-.adm-badge{font-size:11.5px;font-weight:700;padding:3px 8px;border-radius:999px}
-.adm-badge.alert{background:#fdecec;color:var(--a-alert)}
-.adm-badge.ok{background:#eaf6ef;color:var(--a-teal)}
+# MapOn — 맵땅
+
+AI 기반 토지 사전검토 플랫폼.
+
+- 소비자: `/` (맵땅)
+- 전문가센터: `/expert`
+- 관리자: `/admin`
+
+Stack: React + TypeScript + Vite + Supabase
