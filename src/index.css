@@ -137,6 +137,21 @@ select:focus,input:focus{border-color:var(--teal);box-shadow:0 0 0 3px var(--tea
 .bld-link{display:inline-block;margin-top:10px;font-size:13px;font-weight:700;color:var(--teal);text-decoration:none;background:var(--teal-50);padding:9px 14px;border-radius:10px;border:1px solid #c3e3d1}
 .bld-link:hover{background:#dcefe6}
 
+/* ── 토지특성 자동조회(공부값) ── */
+.charact-row{display:grid;grid-template-columns:1fr 1fr;gap:10px 16px;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
+.charact-item{display:flex;flex-direction:column;gap:2px}
+.charact-item span{font-size:12px;color:var(--muted)}
+.charact-item strong{font-size:14px;font-weight:700}
+.charact-item.road-good strong{color:#1a7f4b}
+.charact-item.road-normal strong{color:#2d6cb8}
+.charact-item.road-weak strong{color:#b8862d}
+.charact-item.road-blind strong{color:#b83a3a}
+.charact-note{margin-top:10px;font-size:12px;line-height:1.5;padding:8px 10px;border-radius:8px;font-weight:600}
+.charact-note.road-good{background:#eaf6ef;color:#1a7f4b;border:1px solid #c3e3d1}
+.charact-note.road-normal{background:#eef3fb;color:#2d6cb8;border:1px solid #cfe0f3}
+.charact-note.road-weak{background:#fbf3e3;color:#b8862d;border:1px solid #ecd9b0}
+.charact-note.road-blind{background:#fdecec;color:#b83a3a;border:1px solid #f3c6c6}
+
 /* ── 기반시설 확인 카드 ── */
 .infra-card{margin-top:16px;border:1px solid var(--line);background:var(--white);border-radius:14px;padding:16px}
 .infra-head{display:flex;align-items:baseline;gap:8px;margin-bottom:8px}
@@ -162,6 +177,12 @@ select:focus,input:focus{border-color:var(--teal);box-shadow:0 0 0 3px var(--tea
 .infra-star{color:var(--warn);margin-right:5px;font-size:13px}
 .infra-toggle{font-size:18px;font-weight:700;color:var(--teal)}
 .infra-item-body{padding:12px 14px}
+.infra-auto{font-size:12.5px;line-height:1.5;padding:9px 11px;border-radius:8px;margin-bottom:10px;background:var(--teal-50);color:var(--teal-700);border:1px solid #c3e3d1;font-weight:600}
+.infra-auto b{color:inherit}
+.infra-auto.road-good{background:#eaf6ef;color:#1a7f4b;border-color:#c3e3d1}
+.infra-auto.road-normal{background:#eef3fb;color:#2d6cb8;border-color:#cfe0f3}
+.infra-auto.road-weak{background:#fbf3e3;color:#b8862d;border-color:#ecd9b0}
+.infra-auto.road-blind{background:#fdecec;color:#b83a3a;border-color:#f3c6c6}
 .infra-item-lead{font-size:12.5px;color:var(--warn);line-height:1.55;margin:0 0 8px;font-weight:600}
 .infra-item-body ul{margin:0;padding-left:18px}
 .infra-item-body li{font-size:12.5px;color:var(--ink);line-height:1.7}
