@@ -143,13 +143,27 @@ select:focus,input:focus{border-color:var(--teal);box-shadow:0 0 0 3px var(--tea
 .infra-title{font-weight:800;font-size:15px;color:var(--ink)}
 .infra-sub{font-size:12px;color:var(--muted)}
 .infra-lead{font-size:12.5px;color:var(--muted);line-height:1.6;margin:0 0 12px}
+.infra-lead b{color:var(--ink)}
+/* 등급 범례 + 배지 */
+.infra-legend{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+.infra-badge{font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;border:1px solid transparent;white-space:nowrap}
+.infra-badge.sm{padding:1px 7px;margin-left:7px;font-size:10.5px}
+.infra-badge.g-a{background:#eaf6ef;color:#1a7f4b;border-color:#c3e3d1}
+.infra-badge.g-b{background:#eef3fb;color:#2d6cb8;border-color:#cfe0f3}
+.infra-badge.g-c{background:#fbf3e3;color:#b8862d;border-color:#ecd9b0}
+.infra-badge.g-d{background:#fdecec;color:#b83a3a;border-color:#f3c6c6}
+.infra-danger-note{font-size:11.5px;color:var(--warn);margin:0 0 12px;font-weight:600;line-height:1.5}
 .infra-item{border:1px solid var(--line);border-radius:10px;margin-bottom:8px;overflow:hidden}
 .infra-item.open{border-color:var(--teal)}
+.infra-item.danger{border-left:3px solid var(--warn)}
 .infra-item-head{width:100%;display:flex;justify-content:space-between;align-items:center;padding:12px 14px;background:var(--bg);border:none;cursor:pointer;font-size:14px;font-weight:700;color:var(--ink)}
 .infra-item.open .infra-item-head{background:var(--teal-50);color:var(--teal-700)}
+.infra-item-title{display:inline-flex;align-items:center}
+.infra-star{color:var(--warn);margin-right:5px;font-size:13px}
 .infra-toggle{font-size:18px;font-weight:700;color:var(--teal)}
 .infra-item-body{padding:12px 14px}
 .infra-item-lead{font-size:12.5px;color:var(--warn);line-height:1.55;margin:0 0 8px;font-weight:600}
 .infra-item-body ul{margin:0;padding-left:18px}
 .infra-item-body li{font-size:12.5px;color:var(--ink);line-height:1.7}
+.infra-purpose{margin-top:10px;font-size:12px;color:#b8862d;background:#fbf3e3;border:1px solid #ecd9b0;border-radius:8px;padding:8px 10px;line-height:1.5;font-weight:600}
 .infra-contact{margin-top:10px;font-size:12px;color:var(--teal-700);background:var(--teal-50);border-radius:8px;padding:8px 10px;font-weight:600}
