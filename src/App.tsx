@@ -26,6 +26,11 @@ interface BuildingInfo {
   grndFlr?:number|null; ugrndFlr?:number|null; useAprDay?:string|null;
   violation?:boolean; violationNote?:string|null;
 }
+interface LandCharact {
+  roadSide?:string|null; roadLevel?:'good'|'normal'|'weak'|'blind'|'unknown'; roadNote?:string|null;
+  topographyHeight?:string|null; topographyShape?:string|null; landUse?:string|null;
+  officialPrice?:number|null; stdrYear?:string|null;
+}
 interface LandLookup {
   pnu:string|null; address:string|null; jimok:string|null; areaSqm:number|null; areaPyeong:number|null;
   officialPrice:number|null; primaryUseZone:string|null; useZones:UseZone[]; regulations:string[];
@@ -195,6 +200,7 @@ export default function App() {
   const [land, setLand] = useState<LandLookup|null>(null);
   const [building, setBuilding] = useState<BuildingInfo|null>(null);
   const [bldChecked, setBldChecked] = useState(false);
+  const [charact, setCharact] = useState<LandCharact|null>(null);
   const [infraOpen, setInfraOpen] = useState<string|null>('road');
 
   const [useZoneRaw, setUseZone] = useState('계획관리지역');
@@ -226,7 +232,7 @@ export default function App() {
   async function lookup(){
     if(!address.trim())return;
     setLooking(true); setLookupErr(null); setResults([]); setAiText(null); setAiErr(null);
-    setBuilding(null); setBldChecked(false);
+    setBuilding(null); setBldChecked(false); setCharact(null);
     try{
       let data:LandLookup;
       if(supabaseReady && supabase){
@@ -244,9 +250,10 @@ export default function App() {
       if(data.jimok)setJimok(data.jimok);
       if(data.areaSqm!=null)setArea(String(Math.round(data.areaSqm)));
       setRegs(normalizeRegs(data.regulations||[]));
-      // 건축물 조회(별도 함수, 키 없으면 building:null)
+      // 건축물·토지특성 자동 조회(별도 함수, 키 없으면 null)
       if(data.pnu){
         fetchBuilding(data.pnu).then(b=>{ setBuilding(b); setBldChecked(true); }).catch(()=>setBldChecked(true));
+        fetchCharact(data.pnu).then(setCharact).catch(()=>setCharact(null));
       }
     }catch(e){ setLookupErr(e instanceof Error?e.message:String(e)); setLand(null); }
     finally{ setLooking(false); }
@@ -264,6 +271,21 @@ export default function App() {
         data=await r.json();
       }
       return data?.building ?? null;
+    }catch{ return null; }
+  }
+
+  async function fetchCharact(pnu:string):Promise<LandCharact|null>{
+    try{
+      let data:any;
+      if(supabaseReady && supabase){
+        const res=await supabase.functions.invoke('land-characteristics',{body:{pnu}});
+        if(res.error)return null;
+        data=res.data;
+      }else{
+        const r=await fetch(`${FN_BASE}/land-characteristics`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pnu})});
+        data=await r.json();
+      }
+      return data?.characteristics ?? null;
     }catch{ return null; }
   }
 
@@ -308,6 +330,7 @@ export default function App() {
           address:land.address, jimok:land.jimok, areaSqm:land.areaSqm, areaPyeong:land.areaPyeong,
           officialPrice:land.officialPrice, primaryUseZone:land.primaryUseZone,
           useZones:land.useZones, regulations:land.regulations,
+          roadSide:charact?.roadSide??null, topography:charact?.topographyHeight??null,
         }:null,
         purposes: purposes.map(p=>PURPOSE_LABELS[p]),
         freeText: freeText.trim()||undefined,
@@ -380,6 +403,27 @@ export default function App() {
               <div><span>공시지가</span><strong>{land.officialPrice!=null?`${land.officialPrice.toLocaleString()}원/㎡`:'-'}</strong></div>
               <div><span>대표 용도지역</span><strong>{land.primaryUseZone??'-'}</strong></div>
             </div>
+            {charact && (charact.roadSide||charact.topographyHeight||charact.topographyShape) && (
+              <div className="charact-row">
+                {charact.roadSide && (
+                  <div className={`charact-item road-${charact.roadLevel}`}>
+                    <span>도로접면(공부)</span><strong>{charact.roadSide}</strong>
+                  </div>
+                )}
+                {charact.topographyHeight && (
+                  <div className="charact-item"><span>지형고저</span><strong>{charact.topographyHeight}</strong></div>
+                )}
+                {charact.topographyShape && (
+                  <div className="charact-item"><span>토지형상</span><strong>{charact.topographyShape}</strong></div>
+                )}
+                {charact.landUse && (
+                  <div className="charact-item"><span>이용상황</span><strong>{charact.landUse}</strong></div>
+                )}
+              </div>
+            )}
+            {charact?.roadNote && (
+              <div className={`charact-note road-${charact.roadLevel}`}>{charact.roadNote}</div>
+            )}
             {land.useZones?.length>0 && (
               <div className="zone-tags">
                 {land.useZones.map(z=>(<span key={z.code} className={`zone-tag ${z.isPrimary?'primary':''}`}>{z.name}</span>))}
@@ -484,6 +528,17 @@ export default function App() {
                 </button>
                 {infraOpen===g.key && (
                   <div className="infra-item-body">
+                    {g.key==='road' && charact?.roadSide && (
+                      <div className={`infra-auto road-${charact.roadLevel}`}>
+                        공부상 도로접면: <b>{charact.roadSide}</b>{charact.roadNote?` — ${charact.roadNote}`:''}
+                      </div>
+                    )}
+                    {g.key==='civil' && (charact?.topographyHeight||charact?.topographyShape) && (
+                      <div className="infra-auto">
+                        공부상 지형: <b>{[charact?.topographyHeight,charact?.topographyShape].filter(Boolean).join(' · ')}</b>
+                        {charact?.topographyHeight && /평지/.test(charact.topographyHeight)?' — 평지로 등재(현장 경사·성토는 별도 확인)':' — 현장 경사·성토 확인 권장'}
+                      </div>
+                    )}
                     <p className="infra-item-lead">{g.lead}</p>
                     <ul>{g.items.map((it,i)=>(<li key={i}>{it}</li>))}</ul>
                     {g.purposeNote && <div className="infra-purpose">용도 주의: {g.purposeNote}</div>}
