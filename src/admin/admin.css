@@ -77,3 +77,14 @@
 .adm-badge{font-size:11.5px;font-weight:700;padding:3px 8px;border-radius:999px}
 .adm-badge.alert{background:#fdecec;color:var(--a-alert)}
 .adm-badge.ok{background:#eaf6ef;color:var(--a-teal)}
+
+/* 전문가 상세 모달 */
+.adm-modal-bg{position:fixed;inset:0;background:rgba(20,36,31,.5);display:flex;align-items:center;justify-content:center;z-index:1000;padding:20px}
+.adm-modal{background:#fff;border-radius:14px;padding:24px;width:460px;max-width:100%;max-height:85vh;overflow-y:auto}
+.adm-modal h3{margin:0 0 16px;font-size:17px}
+.adm-kv{display:flex;gap:10px;padding:7px 0;border-bottom:1px solid var(--a-line);font-size:13px}
+.adm-kv span{flex:0 0 100px;color:var(--a-muted)}
+.adm-kv b{font-weight:600}
+.adm-doc-row{display:flex;gap:8px;margin-top:14px}
+.adm-modal-actions{display:flex;gap:8px;margin-top:18px;flex-wrap:wrap}
+.adm-modal-actions .adm-btn{flex:1;min-width:80px}
