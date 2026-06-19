@@ -297,6 +297,9 @@ export default function App() {
       slopePercent:slope?Number(slope):null,
       regulations:regs.length?regs:null,
       roadAccess:land?.roadAccess??null,
+      roadSideName:charact?.roadSide??null,
+      roadSideLevel:charact?.roadLevel??null,
+      topographyName:charact?.topographyHeight??null,
     };
   }
 
@@ -331,6 +334,7 @@ export default function App() {
           officialPrice:land.officialPrice, primaryUseZone:land.primaryUseZone,
           useZones:land.useZones, regulations:land.regulations,
           roadSide:charact?.roadSide??null, topography:charact?.topographyHeight??null,
+          landShape:charact?.topographyShape??null, landUse:charact?.landUse??null,
         }:null,
         purposes: purposes.map(p=>PURPOSE_LABELS[p]),
         freeText: freeText.trim()||undefined,
