@@ -171,11 +171,17 @@ select:focus,input:focus{border-color:var(--teal);box-shadow:0 0 0 3px var(--tea
 .infra-item{border:1px solid var(--line);border-radius:10px;margin-bottom:8px;overflow:hidden}
 .infra-item.open{border-color:var(--teal)}
 .infra-item.danger{border-left:3px solid var(--warn)}
+.infra-item.minor{opacity:0.72}
+.infra-item.minor .infra-item-head{background:#fafbfa}
 .infra-item-head{width:100%;display:flex;justify-content:space-between;align-items:center;padding:12px 14px;background:var(--bg);border:none;cursor:pointer;font-size:14px;font-weight:700;color:var(--ink)}
 .infra-item.open .infra-item-head{background:var(--teal-50);color:var(--teal-700)}
-.infra-item-title{display:inline-flex;align-items:center}
-.infra-star{color:var(--warn);margin-right:5px;font-size:13px}
-.infra-toggle{font-size:18px;font-weight:700;color:var(--teal)}
+.infra-item-title{display:inline-flex;align-items:center;flex-wrap:wrap;gap:2px}
+.infra-star{color:var(--warn);margin-right:5px;font-size:10px}
+.infra-toggle{font-size:18px;font-weight:700;color:var(--teal);flex:0 0 auto;margin-left:8px}
+/* 관련도 태그 */
+.infra-rel-tag{font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:999px;margin-left:7px;white-space:nowrap}
+.infra-rel-tag.core{background:#fdecec;color:#b83a3a;border:1px solid #f3c6c6}
+.infra-rel-tag.minor{background:#eef0ef;color:#8a948f;border:1px solid #dfe4e1}
 .infra-item-body{padding:12px 14px}
 .infra-auto{font-size:12.5px;line-height:1.5;padding:9px 11px;border-radius:8px;margin-bottom:10px;background:var(--teal-50);color:var(--teal-700);border:1px solid #c3e3d1;font-weight:600}
 .infra-auto b{color:inherit}
@@ -183,8 +189,13 @@ select:focus,input:focus{border-color:var(--teal);box-shadow:0 0 0 3px var(--tea
 .infra-auto.road-normal{background:#eef3fb;color:#2d6cb8;border-color:#cfe0f3}
 .infra-auto.road-weak{background:#fbf3e3;color:#b8862d;border-color:#ecd9b0}
 .infra-auto.road-blind{background:#fdecec;color:#b83a3a;border-color:#f3c6c6}
+.infra-auto.bld-exist{background:#eef3fb;color:#2d6cb8;border-color:#cfe0f3}
 .infra-item-lead{font-size:12.5px;color:var(--warn);line-height:1.55;margin:0 0 8px;font-weight:600}
 .infra-item-body ul{margin:0;padding-left:18px}
 .infra-item-body li{font-size:12.5px;color:var(--ink);line-height:1.7}
 .infra-purpose{margin-top:10px;font-size:12px;color:#b8862d;background:#fbf3e3;border:1px solid #ecd9b0;border-radius:8px;padding:8px 10px;line-height:1.5;font-weight:600}
 .infra-contact{margin-top:10px;font-size:12px;color:var(--teal-700);background:var(--teal-50);border-radius:8px;padding:8px 10px;font-weight:600}
+/* 영향 적은 항목 접이식 */
+.infra-minor-wrap{margin-top:6px}
+.infra-minor-toggle{width:100%;padding:10px;font-size:12.5px;font-weight:700;color:var(--muted);background:var(--bg);border:1px dashed var(--line);border-radius:10px;cursor:pointer}
+.infra-minor-toggle:hover{color:var(--teal);border-color:var(--teal)}
