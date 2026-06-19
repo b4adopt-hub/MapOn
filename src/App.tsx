@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { diagnose, LandInput, DiagnosisResult } from './engine/diagnose';
 import { Purpose, PURPOSE_LABELS } from './engine/purposes';
 import { fetchOrdinance, OrdinanceResult } from './engine/ordinance';
@@ -191,6 +191,27 @@ const INFRA_GROUPS: InfraGroup[] = [
   },
 ];
 
+// 목적별 기반시설 관련도: 2=핵심, 1=일반, 0=영향 적음. 도로·인허가는 모든 목적 핵심.
+const REL: Record<string, Partial<Record<Purpose, number>>> = {
+  road:    { house:2, farmhut:2, warehouse:2, cafe:2, camping:2, petfacility:2, fence:1, landscape:1, parking:2, solar:2 },
+  permit:  { house:2, farmhut:2, warehouse:2, cafe:2, camping:2, petfacility:2, fence:1, landscape:1, parking:2, solar:2 },
+  sewage:  { house:2, farmhut:1, warehouse:0, cafe:2, camping:2, petfacility:2, fence:0, landscape:0, parking:0, solar:0 },
+  water:   { house:2, farmhut:1, warehouse:0, cafe:2, camping:2, petfacility:2, fence:0, landscape:1, parking:0, solar:0 },
+  elec:    { house:2, farmhut:2, warehouse:2, cafe:2, camping:1, petfacility:2, fence:0, landscape:0, parking:1, solar:2 },
+  storm:   { house:1, farmhut:1, warehouse:1, cafe:1, camping:1, petfacility:1, fence:1, landscape:2, parking:2, solar:1 },
+  civil:   { house:1, farmhut:1, warehouse:2, cafe:1, camping:2, petfacility:1, fence:1, landscape:2, parking:2, solar:2 },
+  fire:    { house:0, farmhut:0, warehouse:2, cafe:1, camping:1, petfacility:1, fence:0, landscape:0, parking:0, solar:0 },
+  gas:     { house:1, farmhut:0, warehouse:0, cafe:2, camping:0, petfacility:0, fence:0, landscape:0, parking:0, solar:0 },
+  tel:     { house:1, farmhut:0, warehouse:1, cafe:1, camping:1, petfacility:1, fence:0, landscape:0, parking:0, solar:1 },
+};
+
+// 선택 목적들에 대한 항목 관련도(여러 목적이면 최대값) — 목적 없으면 기본 1
+function infraRelevance(key:string, purposes:Purpose[]):number{
+  if(!purposes.length) return 1;
+  const m = REL[key] ?? {};
+  return Math.max(...purposes.map(p=>m[p] ?? 1));
+}
+
 export default function App() {
   const auth = useAuth();
   const [showAuth, setShowAuth] = useState(false);
@@ -202,6 +223,7 @@ export default function App() {
   const [bldChecked, setBldChecked] = useState(false);
   const [charact, setCharact] = useState<LandCharact|null>(null);
   const [infraOpen, setInfraOpen] = useState<string|null>('road');
+  const [showMinor, setShowMinor] = useState(false);
 
   const [useZoneRaw, setUseZone] = useState('계획관리지역');
   const [jimok, setJimok] = useState('대');
@@ -220,6 +242,24 @@ export default function App() {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiText, setAiText] = useState<string|null>(null);
   const [aiErr, setAiErr] = useState<string|null>(null);
+
+  // 기존 주택 건물이면 전기·물·오수가 이미 인입됐을 개연성 높음
+  const hasResidentialBuilding = Boolean(
+    building?.hasBuilding && /(주택|주거|단독|다세대|연립|아파트|근린생활)/.test(building?.mainPurpose ?? '')
+  );
+
+  // 목적·건물 상태로 기반시설 항목을 동적 정렬(숨기지 않고 우선순위 재배치)
+  const infraSorted = useMemo(() => {
+    return INFRA_GROUPS
+      .map(g => ({ g, rel: infraRelevance(g.key, purposes) }))
+      .sort((a, b) => {
+        if (b.rel !== a.rel) return b.rel - a.rel;            // 관련도 높은 항목 먼저
+        return (a.g.danger ?? 99) - (b.g.danger ?? 99);       // 동률이면 위험순위
+      });
+  }, [purposes]);
+
+  const coreItems = infraSorted.filter(x => x.rel >= 1);
+  const minorItems = infraSorted.filter(x => x.rel === 0);
 
   function togglePurpose(p:Purpose){ setPurposes(prev=>prev.includes(p)?prev.filter(x=>x!==p):[...prev,p]); }
   function toggleReg(r:string){ setRegs(p=>p.includes(r)?p.filter(x=>x!==r):[...p,r]); }
@@ -335,6 +375,7 @@ export default function App() {
           useZones:land.useZones, regulations:land.regulations,
           roadSide:charact?.roadSide??null, topography:charact?.topographyHeight??null,
           landShape:charact?.topographyShape??null, landUse:charact?.landUse??null,
+          hasBuilding:building?.hasBuilding??null, buildingPurpose:building?.mainPurpose??null,
         }:null,
         purposes: purposes.map(p=>PURPOSE_LABELS[p]),
         freeText: freeText.trim()||undefined,
@@ -353,6 +394,48 @@ export default function App() {
       setAiText(data.analysis);
     }catch(e){ setAiErr(e instanceof Error?e.message:String(e)); }
     finally{ setAiLoading(false); }
+  }
+
+  function renderInfraItem(g:InfraGroup, rel:number){
+    const core = rel>=2;
+    return (
+      <div key={g.key} className={`infra-item ${infraOpen===g.key?'open':''} ${core?'danger':''} ${rel===0?'minor':''}`}>
+        <button className="infra-item-head" onClick={()=>setInfraOpen(infraOpen===g.key?null:g.key)}>
+          <span className="infra-item-title">
+            {core && <span className="infra-star">●</span>}
+            {g.title}
+            <span className={`infra-badge sm ${GRADE_META[g.grade].cls}`}>{g.grade}</span>
+            {core && <span className="infra-rel-tag core">이 목적에 핵심</span>}
+            {rel===0 && <span className="infra-rel-tag minor">영향 적음</span>}
+          </span>
+          <span className="infra-toggle">{infraOpen===g.key?'−':'+'}</span>
+        </button>
+        {infraOpen===g.key && (
+          <div className="infra-item-body">
+            {g.key==='road' && charact?.roadSide && (
+              <div className={`infra-auto road-${charact.roadLevel}`}>
+                공부상 도로접면: <b>{charact.roadSide}</b>{charact.roadNote?` — ${charact.roadNote}`:''}
+              </div>
+            )}
+            {g.key==='civil' && (charact?.topographyHeight||charact?.topographyShape) && (
+              <div className="infra-auto">
+                공부상 지형: <b>{[charact?.topographyHeight,charact?.topographyShape].filter(Boolean).join(' · ')}</b>
+                {charact?.topographyHeight && /평지/.test(charact.topographyHeight)?' — 평지로 등재(현장 경사·성토는 별도 확인)':' — 현장 경사·성토 확인 권장'}
+              </div>
+            )}
+            {hasResidentialBuilding && (g.key==='elec'||g.key==='water'||g.key==='sewage') && (
+              <div className="infra-auto bld-exist">
+                이 토지에는 기존 건물(주거·근생)이 있어 <b>{g.title.replace(/ .*/,'')} 시설이 이미 인입돼 있을 가능성</b>이 높습니다. 신규 인입보다 <b>기존 시설의 상태·용량·승계 가능 여부</b>를 확인하세요.
+              </div>
+            )}
+            <p className="infra-item-lead">{g.lead}</p>
+            <ul>{g.items.map((it,i)=>(<li key={i}>{it}</li>))}</ul>
+            {g.purposeNote && <div className="infra-purpose">용도 주의: {g.purposeNote}</div>}
+            <div className="infra-contact">확인처: {g.contact}</div>
+          </div>
+        )}
+      </div>
+    );
   }
 
   return (
@@ -505,52 +588,31 @@ export default function App() {
           <div className="infra-card">
             <div className="infra-head">
               <span className="infra-title">기반시설 · 사용성 확인 항목</span>
-              <span className="infra-sub">10개 항목</span>
+              <span className="infra-sub">{purposes.length?`${purposes.map(p=>PURPOSE_LABELS[p]).join('·')} 기준`:'10개 항목'}</span>
             </div>
             <p className="infra-lead">
-              맵땅은 <b>공공데이터로 알 수 있는 것</b>과 <b>기관·현장 확인이 필요한 것</b>을 나눠 보여줍니다.
-              각 항목의 등급을 확인하세요.
-              {infraOutlying(land.primaryUseZone)
-                ? ' 이 토지는 도심 외곽(관리·농림·녹지)이라 기반시설 미비 가능성이 상대적으로 높습니다.'
-                : ' 도시지역이라도 필지별로 인입 여부가 다릅니다.'}
+              선택한 목적에 따라 <b>핵심 항목을 위로</b> 정렬했습니다. 공공데이터로 알 수 있는 것과 기관·현장 확인이 필요한 것을 등급으로 구분합니다.
+              {hasResidentialBuilding
+                ? ' 이 토지에는 기존 건물이 있어 전기·상수도·오수가 이미 인입됐을 가능성이 높습니다(신규 인입보다 승계·상태 확인).'
+                : infraOutlying(land.primaryUseZone)
+                  ? ' 도심 외곽(관리·농림·녹지)이라 기반시설 미비 가능성이 상대적으로 높습니다.'
+                  : ' 도시지역이라도 필지별로 인입 여부가 다릅니다.'}
             </p>
             <div className="infra-legend">
               {(['A','B','C','D'] as DataGrade[]).map(g=>(
                 <span key={g} className={`infra-badge ${GRADE_META[g].cls}`}>{g} {GRADE_META[g].label}</span>
               ))}
             </div>
-            <p className="infra-danger-note">★ 표시는 토지에서 돈이 가장 자주 터지는 핵심 항목입니다(도로·오수·전기·배수·인허가).</p>
-            {INFRA_GROUPS.map(g=>(
-              <div key={g.key} className={`infra-item ${infraOpen===g.key?'open':''} ${g.danger?'danger':''}`}>
-                <button className="infra-item-head" onClick={()=>setInfraOpen(infraOpen===g.key?null:g.key)}>
-                  <span className="infra-item-title">
-                    {g.danger && <span className="infra-star">★</span>}
-                    {g.title}
-                    <span className={`infra-badge sm ${GRADE_META[g.grade].cls}`}>{g.grade}</span>
-                  </span>
-                  <span className="infra-toggle">{infraOpen===g.key?'−':'+'}</span>
+            <p className="infra-danger-note">● 표시는 선택한 목적에 특히 중요한 항목입니다.</p>
+            {coreItems.map(({g,rel})=>renderInfraItem(g,rel))}
+            {minorItems.length>0 && (
+              <div className="infra-minor-wrap">
+                <button className="infra-minor-toggle" onClick={()=>setShowMinor(s=>!s)}>
+                  {showMinor?'이 목적에 영향이 적은 항목 접기':`이 목적에 영향이 적은 항목 ${minorItems.length}개 더 보기`} {showMinor?'▲':'▼'}
                 </button>
-                {infraOpen===g.key && (
-                  <div className="infra-item-body">
-                    {g.key==='road' && charact?.roadSide && (
-                      <div className={`infra-auto road-${charact.roadLevel}`}>
-                        공부상 도로접면: <b>{charact.roadSide}</b>{charact.roadNote?` — ${charact.roadNote}`:''}
-                      </div>
-                    )}
-                    {g.key==='civil' && (charact?.topographyHeight||charact?.topographyShape) && (
-                      <div className="infra-auto">
-                        공부상 지형: <b>{[charact?.topographyHeight,charact?.topographyShape].filter(Boolean).join(' · ')}</b>
-                        {charact?.topographyHeight && /평지/.test(charact.topographyHeight)?' — 평지로 등재(현장 경사·성토는 별도 확인)':' — 현장 경사·성토 확인 권장'}
-                      </div>
-                    )}
-                    <p className="infra-item-lead">{g.lead}</p>
-                    <ul>{g.items.map((it,i)=>(<li key={i}>{it}</li>))}</ul>
-                    {g.purposeNote && <div className="infra-purpose">용도 주의: {g.purposeNote}</div>}
-                    <div className="infra-contact">확인처: {g.contact}</div>
-                  </div>
-                )}
+                {showMinor && minorItems.map(({g,rel})=>renderInfraItem(g,rel))}
               </div>
-            ))}
+            )}
           </div>
         )}
 
