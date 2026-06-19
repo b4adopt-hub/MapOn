@@ -68,6 +68,7 @@ interface InfraGroup {
   lead:string; items:string[]; purposeNote?:string; contact:string;
 }
 // 문서 기준: 가장 위험한 5개(도로·오수·전기·배수·인허가)를 danger로 표시하고 상단 정렬
+// 아래 INFRA_GROUPS는 "나대지(빈땅)" 기준. 기존 건물이 있으면 EXISTING_BLD_OVERRIDE로 본문을 교체.
 const INFRA_GROUPS: InfraGroup[] = [
   {
     key:'road', title:'도로 (접도)', grade:'B', danger:1,
@@ -191,6 +192,67 @@ const INFRA_GROUPS: InfraGroup[] = [
   },
 ];
 
+// 기존 건물(주거·근생)이 있을 때 덧쓰는 본문 — "신규 인입"이 아니라 "기존 시설 승계·상태" 관점
+// 이미 사용승인된 집이 서 있다 = 진입·수도·전기·오수가 한 번은 해결됐던 땅.
+const EXISTING_BLD_OVERRIDE: Record<string, Partial<Pick<InfraGroup,'lead'|'items'|'purposeNote'>>> = {
+  road: {
+    lead:'이미 사용승인된 건물이 있는 땅입니다. 사람이 드나들던 진입로가 존재한다는 뜻이라, "맹지인가"는 사실상 답이 나와 있습니다. 다만 재건축·증축·대형차 진입을 생각한다면 현장 도로 상태를 확인하세요.',
+    items:[
+      '현장 진입로 폭·포장 상태(승용차·이사짐차·이사차 드나들 수 있는지)',
+      '재건축·증축 시 현행 건축법 도로 기준(폭 4m 등) 충족 여부',
+      '진입로가 내 땅·국공유인지, 타인 사유지(사도)를 지나는지 — 통행권 분쟁 소지',
+      '공부상 도로접면과 현황 일치 여부(지적도와 실제 진입로가 다른 경우)',
+    ],
+    purposeNote:'기존 집을 허물고 새로 짓거나 크게 증축할 계획이면, 현장 진입로가 건축법 기준을 만족하는지 다시 확인하세요.',
+  },
+  water: {
+    lead:'기존 주거 건물이 있어 상수도나 관정이 이미 연결돼 사용 중일 가능성이 높습니다. 신규 관정 개발보다 기존 급수 방식·상태를 확인하면 됩니다.',
+    items:[
+      '현재 급수 방식 — 상수도 인입인지, 지하수(관정)인지',
+      '상수도면 계량기 명의·체납 이력, 단수 여부',
+      '관정이면 수량·수질검사 결과, 겨울 동결 이력',
+      '오래된 남은 배관·동파이프라면 교체 필요 여부',
+    ],
+    purposeNote:'그대로 살 계획이면 수도가 이미 있으니 큰 문제가 아닙니다. 다만 관정이면 수질·수량을, 증축·영업이면 급수량을 확인하세요.',
+  },
+  sewage: {
+    lead:'기존 건물이 있어 오수 처리(공공하수관 또는 정화조)가 이미 돼 있을 가능성이 높습니다. 신규 설치보다 기존 정화조 상태·용량을 확인하면 됩니다.',
+    items:[
+      '현재 오수 처리 방식 — 공공하수관 연결인지, 개인 정화조인지',
+      '건축물대장·정화조 대장상 정화조 용량·형식·설치일',
+      '정화조 청소 이력·노후도, 방류수 배출 경로 정상 여부',
+      '증축·용도변경 시 정화조 용량 증설·공공하수 연결 의무 여부',
+    ],
+    purposeNote:'단순 거주면 기존 정화조로 충분합니다. 카페·식당 등으로 바꾸면 오수량이 늘어 정화조 증설이 필요할 수 있습니다.',
+  },
+  elec: {
+    lead:'기존 건물이 있어 전기가 이미 인입돼 계량기가 있을 가능성이 높습니다. 신규 인입보다 기존 용량·명의 승계를 확인하면 됩니다.',
+    items:[
+      '기존 한전 계량기 명의·체납 이력, 명의변경 가능 여부',
+      '계약 전력(kW)이 쓸 용도에 충분한지(전기냉난방·인덱션 등 쓰면 증설 필요)',
+      '단상/삼상 구분 — 공장·기계는 삼상 필요',
+      '노후 건물이면 내부 전기배선·분전함 교체 필요 여부',
+    ],
+    purposeNote:'그대로 살면 전기는 이미 있습니다. 전기차·공장·냉난방 증설이면 계약전력 증설·삼상 여부를 확인하세요.',
+  },
+  gas: {
+    lead:'기존 건물이 있어 난방·취사 연료가 이미 갖춰져 있을 가능성이 높습니다(도시가스 미공급 지역은 통상 LPG·기름·전기). 현재 방식과 유지비를 확인하세요.',
+    items:[
+      '현재 난방·취사 연료(도시가스·LPG·기름·전기) 확인',
+      'LPG면 용기·배관 상태·안전점검 이력',
+      '도시가스 공급 지역으로 추후 전환 가능한지(선택 사항)',
+    ],
+    purposeNote:'도시가스가 안 들어와 LPG·기름을 쓰는 건 외곽 주택에서 흔한 일로, 결함이 아니라 유지비·편의성 차이입니다.',
+  },
+  tel: {
+    lead:'기존 건물이 있어 통신이 이미 들어와 있을 가능성이 높습니다. 속도·품질만 확인하면 됩니다.',
+    items:[
+      '현재 인터넷 연결 여부·회선 종류·속도',
+      '휴대폰 신호 세기(통신사별 차이 있을 수 있음)',
+    ],
+  },
+};
+
 // 목적별 기반시설 관련도: 2=핵심, 1=일반, 0=영향 적음. 도로·인허가는 모든 목적 핵심.
 const REL: Record<string, Partial<Record<Purpose, number>>> = {
   road:    { house:2, farmhut:2, warehouse:2, cafe:2, camping:2, petfacility:2, fence:1, landscape:1, parking:2, solar:2 },
@@ -243,7 +305,7 @@ export default function App() {
   const [aiText, setAiText] = useState<string|null>(null);
   const [aiErr, setAiErr] = useState<string|null>(null);
 
-  // 기존 주택 건물이면 전기·물·오수가 이미 인입됐을 개연성 높음
+  // 기존 주택·근생 건물이면 전기·물·오수·도로가 이미 해결됐을 개연성 높음
   const hasResidentialBuilding = Boolean(
     building?.hasBuilding && /(주택|주거|단독|다세대|연립|아파트|근린생활)/.test(building?.mainPurpose ?? '')
   );
@@ -398,6 +460,11 @@ export default function App() {
 
   function renderInfraItem(g:InfraGroup, rel:number){
     const core = rel>=2;
+    // 기존 주거·근생 건물이 있고 해당 항목에 오버라이드가 있으면 본문 교체
+    const ov = hasResidentialBuilding ? EXISTING_BLD_OVERRIDE[g.key] : undefined;
+    const lead = ov?.lead ?? g.lead;
+    const items = ov?.items ?? g.items;
+    const purposeNote = ov ? ov.purposeNote : g.purposeNote;
     return (
       <div key={g.key} className={`infra-item ${infraOpen===g.key?'open':''} ${core?'danger':''} ${rel===0?'minor':''}`}>
         <button className="infra-item-head" onClick={()=>setInfraOpen(infraOpen===g.key?null:g.key)}>
@@ -407,6 +474,7 @@ export default function App() {
             <span className={`infra-badge sm ${GRADE_META[g.grade].cls}`}>{g.grade}</span>
             {core && <span className="infra-rel-tag core">이 목적에 핵심</span>}
             {rel===0 && <span className="infra-rel-tag minor">영향 적음</span>}
+            {ov && <span className="infra-rel-tag exist">기존 시설</span>}
           </span>
           <span className="infra-toggle">{infraOpen===g.key?'−':'+'}</span>
         </button>
@@ -423,14 +491,14 @@ export default function App() {
                 {charact?.topographyHeight && /평지/.test(charact.topographyHeight)?' — 평지로 등재(현장 경사·성토는 별도 확인)':' — 현장 경사·성토 확인 권장'}
               </div>
             )}
-            {hasResidentialBuilding && (g.key==='elec'||g.key==='water'||g.key==='sewage') && (
+            {ov && (
               <div className="infra-auto bld-exist">
-                이 토지에는 기존 건물(주거·근생)이 있어 <b>{g.title.replace(/ .*/,'')} 시설이 이미 인입돼 있을 가능성</b>이 높습니다. 신규 인입보다 <b>기존 시설의 상태·용량·승계 가능 여부</b>를 확인하세요.
+                이 토지에는 <b>기존 건물({building?.mainPurpose ?? '주거·근생'})</b>이 있어, 이 항목은 <b>신규 설치가 아니라 기존 시설의 상태·승계 확인</b>으로 바꿔 안내합니다.
               </div>
             )}
-            <p className="infra-item-lead">{g.lead}</p>
-            <ul>{g.items.map((it,i)=>(<li key={i}>{it}</li>))}</ul>
-            {g.purposeNote && <div className="infra-purpose">용도 주의: {g.purposeNote}</div>}
+            <p className="infra-item-lead">{lead}</p>
+            <ul>{items.map((it,i)=>(<li key={i}>{it}</li>))}</ul>
+            {purposeNote && <div className="infra-purpose">{ov?'참고':'용도 주의'}: {purposeNote}</div>}
             <div className="infra-contact">확인처: {g.contact}</div>
           </div>
         )}
@@ -593,7 +661,7 @@ export default function App() {
             <p className="infra-lead">
               선택한 목적에 따라 <b>핵심 항목을 위로</b> 정렬했습니다. 공공데이터로 알 수 있는 것과 기관·현장 확인이 필요한 것을 등급으로 구분합니다.
               {hasResidentialBuilding
-                ? ' 이 토지에는 기존 건물이 있어 전기·상수도·오수가 이미 인입됐을 가능성이 높습니다(신규 인입보다 승계·상태 확인).'
+                ? ' 이 토지에는 이미 사용승인된 건물이 있어 도로·전기·상수도·오수가 이미 해결돼 있을 가능성이 높습니다. 해당 항목은 신규 설치가 아닌 기존 시설 상태·승계 확인으로 안내합니다.'
                 : infraOutlying(land.primaryUseZone)
                   ? ' 도심 외곽(관리·농림·녹지)이라 기반시설 미비 가능성이 상대적으로 높습니다.'
                   : ' 도시지역이라도 필지별로 인입 여부가 다릅니다.'}
