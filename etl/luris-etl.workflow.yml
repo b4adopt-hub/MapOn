@@ -1,4 +1,4 @@
-> 이 파일을 .github/workflows/luris-etl.yml 로 이동(웹에서 편집→파일명 변경)하면 활성화됩니다.
+# 이 파일을 .github/workflows/luris-etl.yml 로 이동(웹에서 편집→파일명 변경)하면 활성화됩니다.
 
 name: LURIS ETL
 
