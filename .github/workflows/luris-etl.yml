@@ -1,10 +1,8 @@
-# 이 파일을 .github/workflows/luris-etl.yml 로 이동(웹에서 편집→파일명 변경)하면 활성화됩니다.
-
 name: LURIS ETL
 
 on:
   schedule:
-    - cron: '0 3 15 * *'   # 매월 15일 12:00 KST
+    - cron: '0 3 15-18 * *'   # 매월 15~18일 12:00 KST, 성공한 날 이후는 자동 스킵
   workflow_dispatch:
     inputs:
       month:
@@ -31,8 +29,15 @@ jobs:
       - name: 의존성 설치
         run: pip install --quiet openpyxl psycopg2-binary requests
 
+      - name: 적재 이력 가드 (스케줄만)
+        id: guard
+        if: ${{ github.event_name == 'schedule' }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python etl/check_loaded.py
+
       - name: 데이터 취득 (auto - eum.go.kr 다운로드)
-        if: ${{ github.event_name == 'schedule' || inputs.mode == 'auto' }}
+        if: ${{ steps.guard.outputs.skip != 'true' && (github.event_name == 'schedule' || inputs.mode == 'auto') }}
         run: python etl/fetch_eum.py --out data
 
       - name: 데이터 취득 (release - 릴리스 자산)
@@ -48,22 +53,22 @@ jobs:
 
       - name: 파일·월 확정
         id: resolve
+        if: ${{ steps.guard.outputs.skip != 'true' }}
         run: |
           LAW=$(ls data/*법령정보*.xlsx | head -1)
           ACT=$(ls data/*행위제한정보*.xlsx | head -1)
           MONTH="${{ inputs.month }}"
           if [ -z "$MONTH" ]; then
-            MONTH=$(echo "$LAW" | grep -oE '20[0-9]{6}' | head -1 | cut -c1-6)
+            MONTH=$(ls data/*법령정보*.xlsx | grep -oE '20[0-9]{6}' | head -1 | cut -c1-6)
           fi
-          test -n "$MONTH" || { echo '월(YYYYMM) 확정 실패 — month 입력으로 재실행'; exit 1; }
+          test -n "$MONTH" || MONTH=$(date +%Y%m)
           echo "law=$LAW" >> "$GITHUB_OUTPUT"
           echo "act=$ACT" >> "$GITHUB_OUTPUT"
           echo "month=$MONTH" >> "$GITHUB_OUTPUT"
           echo "적재 대상: $LAW / $ACT / month=$MONTH"
 
       - name: Supabase 적재
+        if: ${{ steps.guard.outputs.skip != 'true' }}
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: |
-          test -n "$DATABASE_URL" || { echo 'Settings > Secrets and variables > Actions 에 DATABASE_URL 등록 필요'; exit 1; }
-          python etl/load_luris.py --law "${{ steps.resolve.outputs.law }}" --act "${{ steps.resolve.outputs.act }}" --month "${{ steps.resolve.outputs.month }}"
+        run: python etl/load_luris.py --law "${{ steps.resolve.outputs.law }}" --act "${{ steps.resolve.outputs.act }}" --month "${{ steps.resolve.outputs.month }}"
