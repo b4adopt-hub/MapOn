@@ -1,29 +1,33 @@
 # -*- coding: utf-8 -*-
 """eum.go.kr 열린데이터: 법령정보(006)·행위제한정보(007) 최신 월 파일 다운로드.
-목록 페이지의 dataDownload('seq') 호출에서 최신 seq를 취하고,
-dataDownload 함수 정의에서 실제 다운로드 URL 템플릿을 추출해 사용한다.
-정의를 못 찾으면 관행적 후보 URL을 순차 시도하며, 응답 크기·형식을 검증한다.
+해외 IP 간헐 차단에 대비해 연결 재시도를 내장한다.
 """
-import argparse, os, re, sys, zipfile
+import argparse, os, re, sys, time, zipfile
 import requests
 
 BASE = 'https://www.eum.go.kr'
 UA = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
       'Referer': BASE + '/web/op/sv/svItemDet.jsp'}
 NAME = {'006': '법령정보', '007': '행위제한정보'}
-MIN_SIZE = {'006': 1_000_000, '007': 10_000_000}  # 데이터 파일 최소 크기 검증
+MIN_SIZE = {'006': 1_000_000, '007': 10_000_000}
 
-def get(sess, url, **kw):
-    r = sess.get(url, headers=UA, timeout=kw.pop('timeout', 60), **kw)
-    return r
+def get(sess, url, attempts=3, timeout=40, **kw):
+    last = None
+    for i in range(1, attempts + 1):
+        try:
+            return sess.get(url, headers=UA, timeout=timeout, **kw)
+        except requests.exceptions.RequestException as e:
+            last = e
+            print(f'[fetch_eum] 연결 실패 {i}/{attempts}: {type(e).__name__} — {url[:80]}')
+            time.sleep(10 * i)
+    raise last
 
 def find_template(sess, html):
-    """dataDownload 함수 정의에서 .jsp 포함 URL 추출 (본문 + 외부 js)"""
     sources = [html]
     for js in re.findall(r"src=[\"']([^\"']+\.js[^\"']*)[\"']", html):
         u = js if js.startswith('http') else BASE + (js if js.startswith('/') else '/' + js)
         try:
-            r = get(sess, u, timeout=30)
+            r = get(sess, u, attempts=1, timeout=30)
             if r.ok:
                 sources.append(r.text)
         except requests.RequestException:
@@ -40,7 +44,11 @@ def find_template(sess, html):
     return None, None
 
 def try_download(sess, url, out_dir, tag):
-    r = get(sess, url, timeout=900, stream=True)
+    try:
+        r = get(sess, url, attempts=2, timeout=900, stream=True)
+    except requests.RequestException as e:
+        print(f'[fetch_eum] {tag}: {url} -> 연결 실패 {type(e).__name__}')
+        return None
     if not r.ok:
         print(f'[fetch_eum] {tag}: {url} -> HTTP {r.status_code}')
         return None
@@ -69,7 +77,7 @@ def try_download(sess, url, out_dir, tag):
             size += len(chunk)
     print(f'[fetch_eum] {tag}: {url} -> {fname} ({size:,} bytes, {r.headers.get("content-type")})')
     if size < MIN_SIZE[[k for k, v in NAME.items() if v == tag][0]]:
-        print(f'[fetch_eum] {tag}: 크기 미달 — 데이터 파일 아님으로 판정, 다음 후보 시도')
+        print(f'[fetch_eum] {tag}: 크기 미달 — 데이터 파일 아님, 다음 후보 시도')
         os.remove(path)
         return None
     if path.lower().endswith('.zip'):
@@ -95,7 +103,7 @@ def fetch_one(sess, data_cd, out_dir):
     seqs = re.findall(r"dataDownload\('?(\d+)'?\)", html)
     if not seqs:
         sys.exit(f'[fetch_eum] dataCd={data_cd}: dataDownload 호출을 찾지 못함')
-    seq = seqs[0]  # 목록 최상단 = 최신 월
+    seq = seqs[0]
     print(f'[fetch_eum] dataCd={data_cd}: 최신 seq={seq} (후보 {len(seqs)}개)')
     m = re.search(r'20[0-9]{6}', html)
     month = m.group(0)[:6] if m else ''
@@ -105,7 +113,6 @@ def fetch_one(sess, data_cd, out_dir):
     if tmpl:
         t = tmpl if tmpl.startswith('http') else BASE + (tmpl if tmpl.startswith('/') else '/web/op/sv/' + tmpl)
         sep = '&' if '?' in t else '?'
-        # 함수 본문에서 파라미터명 추정, 없으면 통상 이름들
         pnames = re.findall(r'[?&]([A-Za-z_]+)=', t) or ['seq', 'fileSeq', 'dataSeq', 'idx']
         if '=' in t and t.rstrip().endswith('='):
             cands.append(t + seq)
@@ -128,7 +135,7 @@ def fetch_one(sess, data_cd, out_dir):
         if path:
             print(f'[fetch_eum] {tag}: 확정 {path}')
             return month
-    sys.exit(f'[fetch_eum] dataCd={data_cd}: 모든 후보 URL 실패. 위 로그(특히 dataDownload 정의)를 근거로 추가 보정 필요.')
+    sys.exit(f'[fetch_eum] dataCd={data_cd}: 모든 후보 URL 실패. 위 로그(dataDownload 정의)를 근거로 추가 보정 필요.')
 
 def main():
     ap = argparse.ArgumentParser()
