@@ -1,74 +1,77 @@
 # -*- coding: utf-8 -*-
-"""eum.go.kr 열린데이터에서 토지이용규제 법령정보(dataCd=006)·행위제한정보(dataCd=007)
-최신 월 파일을 내려받는다. 링크를 못 찾으면 페이지 구조를 로그로 덤프해 실측 보정을 돕는다.
+"""eum.go.kr 열린데이터: 법령정보(006)·행위제한정보(007) 최신 월 파일 다운로드.
+목록 페이지의 dataDownload('seq') 호출에서 최신 seq를 취하고,
+dataDownload 함수 정의에서 실제 다운로드 URL 템플릿을 추출해 사용한다.
+정의를 못 찾으면 관행적 후보 URL을 순차 시도하며, 응답 크기·형식을 검증한다.
 """
 import argparse, os, re, sys, zipfile
 import requests
 
 BASE = 'https://www.eum.go.kr'
 UA = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
-      'Referer': BASE}
+      'Referer': BASE + '/web/op/sv/svItemDet.jsp'}
 NAME = {'006': '법령정보', '007': '행위제한정보'}
+MIN_SIZE = {'006': 1_000_000, '007': 10_000_000}  # 데이터 파일 최소 크기 검증
 
-def dump_debug(html: str, data_cd: str):
-    print(f'--- [debug] dataCd={data_cd} 페이지 내 다운로드 관련 요소 ---')
-    pat = re.compile(r'.{0,120}(?:down|Down|DOWN|다운|file|File|\.zip|\.xlsx|\.csv|onclick)[^\n]{0,160}')
-    seen = set()
-    n = 0
-    for m in pat.finditer(html):
-        line = m.group(0).strip().replace('\t', ' ')
-        key = line[:80]
-        if key in seen:
-            continue
-        seen.add(key)
-        print('[debug]', line[:280])
-        n += 1
-        if n >= 50:
-            print('[debug] ... (50개 초과 생략)')
-            break
-    if n == 0:
-        print('[debug] 관련 문자열 없음. 응답 앞 1500자:')
-        print(html[:1500])
-    print('--- [debug] 끝 ---')
+def get(sess, url, **kw):
+    r = sess.get(url, headers=UA, timeout=kw.pop('timeout', 60), **kw)
+    return r
 
-def latest_link(data_cd: str, sess: requests.Session):
-    url = f'{BASE}/web/op/sv/svItemDet.jsp?dataCd={data_cd}&dataTypeCd=CSV&currentPageNo=1&selectType=subject'
-    r = sess.get(url, headers=UA, timeout=60)
-    print(f'[fetch_eum] dataCd={data_cd}: HTTP {r.status_code}, {len(r.text)}자')
-    r.raise_for_status()
-    html = r.text
-    cands = []
-    # 1) href/src 안의 다운로드성 경로
-    cands += re.findall(r"(?:href|src)=[\"']([^\"']*(?:fileDown|FileDown|download|Download)[^\"']*)[\"']", html)
-    # 2) 직접 파일 링크
-    cands += re.findall(r"(?:href|src)=[\"']([^\"']+\.(?:zip|xlsx|csv))[\"']", html, re.I)
-    # 3) onclick 함수 호출 인자 (fn_fileDown, fnFileDown, goDown, fileDownload 등)
-    for fn, args in re.findall(r"onclick=[\"'][^\"']*?([A-Za-z_]*[Dd]own[A-Za-z_]*)\(([^)]*)\)", html):
-        print(f'[fetch_eum] onclick 후보: {fn}({args})')
-    if not cands:
-        dump_debug(html, data_cd)
-        sys.exit(f'[fetch_eum] dataCd={data_cd}: 다운로드 링크를 찾지 못함. 위 debug 출력을 근거로 보정 필요.')
-    link = cands[0]
-    if link.startswith('/'):
-        link = BASE + link
-    elif not link.startswith('http'):
-        link = f'{BASE}/web/op/sv/{link}'
-    m = re.search(r'20[0-9]{6}', html)
-    month = m.group(0)[:6] if m else ''
-    print(f'[fetch_eum] dataCd={data_cd}: 선택 링크 {link} (month후보={month})')
-    return link, month
+def find_template(sess, html):
+    """dataDownload 함수 정의에서 .jsp 포함 URL 추출 (본문 + 외부 js)"""
+    sources = [html]
+    for js in re.findall(r"src=[\"']([^\"']+\.js[^\"']*)[\"']", html):
+        u = js if js.startswith('http') else BASE + (js if js.startswith('/') else '/' + js)
+        try:
+            r = get(sess, u, timeout=30)
+            if r.ok:
+                sources.append(r.text)
+        except requests.RequestException:
+            pass
+    for src in sources:
+        m = re.search(r'function\s+dataDownload\s*\(([^)]*)\)\s*\{(.*?)\}', src, re.S)
+        if m:
+            body = m.group(2)
+            print('[fetch_eum] dataDownload 정의 발견:', re.sub(r'\s+', ' ', body)[:400])
+            um = re.search(r"[\"']([^\"']*\.jsp[^\"']*)[\"']", body)
+            if um:
+                return um.group(1), body
+            return None, body
+    return None, None
 
-def download(url: str, out_dir: str, tag: str, sess: requests.Session) -> str:
-    r = sess.get(url, headers=UA, timeout=600, stream=True)
-    r.raise_for_status()
+def try_download(sess, url, out_dir, tag):
+    r = get(sess, url, timeout=900, stream=True)
+    if not r.ok:
+        print(f'[fetch_eum] {tag}: {url} -> HTTP {r.status_code}')
+        return None
     cd = r.headers.get('content-disposition', '')
-    m = re.search(r'filename\*?=(?:UTF-8\'\')?\"?([^\";]+)', cd)
-    fname = requests.utils.unquote(m.group(1)) if m else f'{tag}.bin'
+    fname = ''
+    m = re.search(r"filename\*=UTF-8''([^;]+)", cd)
+    if m:
+        fname = requests.utils.unquote(m.group(1))
+    else:
+        m = re.search(r'filename=\"?([^\";]+)', cd)
+        if m:
+            rawb = m.group(1).encode('latin-1', 'ignore')
+            for enc in ('utf-8', 'euc-kr', 'cp949'):
+                try:
+                    fname = rawb.decode(enc)
+                    break
+                except UnicodeDecodeError:
+                    continue
+    if not fname:
+        fname = f'{tag}.bin'
     path = os.path.join(out_dir, fname)
+    size = 0
     with open(path, 'wb') as f:
         for chunk in r.iter_content(1 << 20):
             f.write(chunk)
-    print(f'[fetch_eum] {tag}: 수신 {fname} ({os.path.getsize(path):,} bytes, content-type={r.headers.get("content-type")})')
+            size += len(chunk)
+    print(f'[fetch_eum] {tag}: {url} -> {fname} ({size:,} bytes, {r.headers.get("content-type")})')
+    if size < MIN_SIZE[[k for k, v in NAME.items() if v == tag][0]]:
+        print(f'[fetch_eum] {tag}: 크기 미달 — 데이터 파일 아님으로 판정, 다음 후보 시도')
+        os.remove(path)
+        return None
     if path.lower().endswith('.zip'):
         with zipfile.ZipFile(path) as z:
             z.extractall(out_dir)
@@ -76,13 +79,56 @@ def download(url: str, out_dir: str, tag: str, sess: requests.Session) -> str:
         if xl:
             path = os.path.join(out_dir, xl[0])
     if not path.lower().endswith('.xlsx'):
-        sys.exit(f'[fetch_eum] {tag}: xlsx가 아닌 응답({fname}).')
-    if tag not in os.path.basename(path):
-        std = os.path.join(out_dir, f'토지이용규제_{tag}_전국.xlsx')
+        print(f'[fetch_eum] {tag}: xlsx 아님({fname}) — 다음 후보 시도')
+        return None
+    std = os.path.join(out_dir, f'토지이용규제_{tag}_전국.xlsx')
+    if os.path.abspath(path) != os.path.abspath(std):
         os.replace(path, std)
-        path = std
-    print(f'[fetch_eum] {tag}: {path}')
-    return path
+    return std
+
+def fetch_one(sess, data_cd, out_dir):
+    tag = NAME[data_cd]
+    url = f'{BASE}/web/op/sv/svItemDet.jsp?dataCd={data_cd}&dataTypeCd=CSV&currentPageNo=1&selectType=subject'
+    r = get(sess, url)
+    r.raise_for_status()
+    html = r.text
+    seqs = re.findall(r"dataDownload\('?(\d+)'?\)", html)
+    if not seqs:
+        sys.exit(f'[fetch_eum] dataCd={data_cd}: dataDownload 호출을 찾지 못함')
+    seq = seqs[0]  # 목록 최상단 = 최신 월
+    print(f'[fetch_eum] dataCd={data_cd}: 최신 seq={seq} (후보 {len(seqs)}개)')
+    m = re.search(r'20[0-9]{6}', html)
+    month = m.group(0)[:6] if m else ''
+
+    tmpl, body = find_template(sess, html)
+    cands = []
+    if tmpl:
+        t = tmpl if tmpl.startswith('http') else BASE + (tmpl if tmpl.startswith('/') else '/web/op/sv/' + tmpl)
+        sep = '&' if '?' in t else '?'
+        # 함수 본문에서 파라미터명 추정, 없으면 통상 이름들
+        pnames = re.findall(r'[?&]([A-Za-z_]+)=', t) or ['seq', 'fileSeq', 'dataSeq', 'idx']
+        if '=' in t and t.rstrip().endswith('='):
+            cands.append(t + seq)
+        else:
+            for p in pnames:
+                cands.append(f'{t}{sep}{p}={seq}')
+    cands += [
+        f'{BASE}/web/op/sv/dataDownload.jsp?seq={seq}',
+        f'{BASE}/web/op/sv/dataDownload.jsp?fileSeq={seq}',
+        f'{BASE}/web/op/sv/svDataDownload.jsp?seq={seq}',
+        f'{BASE}/web/op/sv/svDataDownload.jsp?fileSeq={seq}',
+        f'{BASE}/web/op/sv/svItemDownload.jsp?seq={seq}',
+    ]
+    seen = set()
+    for u in cands:
+        if u in seen:
+            continue
+        seen.add(u)
+        path = try_download(sess, u, out_dir, tag)
+        if path:
+            print(f'[fetch_eum] {tag}: 확정 {path}')
+            return month
+    sys.exit(f'[fetch_eum] dataCd={data_cd}: 모든 후보 URL 실패. 위 로그(특히 dataDownload 정의)를 근거로 추가 보정 필요.')
 
 def main():
     ap = argparse.ArgumentParser()
@@ -92,10 +138,9 @@ def main():
     sess = requests.Session()
     months = set()
     for cd in ('006', '007'):
-        link, month = latest_link(cd, sess)
-        if month:
-            months.add(month)
-        download(link, a.out, NAME[cd], sess)
+        mo = fetch_one(sess, cd, a.out)
+        if mo:
+            months.add(mo)
     if months:
         print(f'[fetch_eum] month={sorted(months)[-1]}')
 
