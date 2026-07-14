@@ -5,6 +5,7 @@
  *  - ordinance_rules(get_ordinance RPC): 수기 큐레이션 경고·안내 규칙
  *  - zoning_rates: 조례 기본 건폐율·용적률 (국토부 토지이용규제 월별 데이터)
  *  - permitted_uses: 조례 기준 용도별 건축 가능/금지 (동 데이터)
+ *  - devperm_rules: 개발행위허가 경사도·입목축적 (지자체 조례 실측 등재)
  * 데이터 없는 지자체는 일반 안내(genericItems) 폴백.
  */
 
@@ -12,6 +13,7 @@ import { Purpose, PURPOSE_LABELS } from './purposes';
 import { supabase, supabaseReady } from '../lib/supabase';
 import { fetchZoningRates, ZoningRates } from './zoningRates';
 import { fetchPermittedUses, PurposeUseResult } from './permittedUses';
+import { fetchDevPermRules, slopeVerdict, DevPermRules } from './devPermRules';
 
 export interface OrdinanceItem {
   key: string;
@@ -116,16 +118,49 @@ function useItem(u: PurposeUseResult, zoneName: string): OrdinanceItem {
   };
 }
 
+/** devperm_rules 기반 개발행위허가 경사도·입목축적 항목 생성 */
+function devPermItems(dev: DevPermRules, userSlopePct: number | null): OrdinanceItem[] {
+  const out: OrdinanceItem[] = [];
+  if (dev.slope) {
+    const areaTxt = dev.slope.areas.length
+      ? ' 지역구분: ' + dev.slope.areas.map((a) => `${a.area} ${a.valueDeg ?? a.valuePct}${a.valueDeg != null ? '도' : '%'}`).join(', ') + '.'
+      : '';
+    const roadTxt = dev.slope.accessRoadPct != null ? ` 진입로 종단경사도는 ${dev.slope.accessRoadPct}% 이하여야 합니다.` : '';
+    const verdict = slopeVerdict(userSlopePct, dev.slope.baseDeg);
+    out.push({
+      key: 'devperm_slope',
+      label: verdict
+        ? `개발행위허가 경사도 — ${verdict.level === 'warning' ? '기준 초과 주의' : verdict.level === 'caution' ? '기준 근접' : '기준 이내'}`
+        : `개발행위허가 경사도 기준: ${dev.slope.baseDeg ?? '-'}도 이하`,
+      level: verdict?.level ?? 'caution',
+      note: `${dev.slope.baseDeg != null ? `이 지자체는 경사도 ${dev.slope.baseDeg}도 이하 토지에 한해 개발행위를 허가합니다.` : ''}${areaTxt}${roadTxt}${verdict ? ' ' + verdict.text : ' 계획 필지의 평균경사도를 확인하세요.'} 경사도 산정방식은 지자체 규칙으로 정해지며, 기준 초과 시에도 도시계획위원회 심의로 허가되는 경우가 있습니다.`,
+      source: `「${dev.slope.ordinance}」 ${dev.slope.provision}`,
+    });
+  }
+  if (dev.forestStock) {
+    out.push({
+      key: 'devperm_forest',
+      label: '개발행위허가 입목축적 기준',
+      level: 'info',
+      note: `임야 개발 시 입목축적 기준: ${dev.forestStock.text}. 대상 토지의 헥타르당 평균입목축적이 기준을 초과하면 개발행위허가가 제한될 수 있습니다.`,
+      source: `「${dev.forestStock.ordinance}」 ${dev.forestStock.provision}`,
+    });
+  }
+  return out;
+}
+
 /**
- * 조례 안내 조회(비동기). get_ordinance RPC + zoning_rates + permitted_uses.
- * @param pnu      19자리 PNU (앞 5자리가 시군구 코드)
- * @param zoneName 대표 용도지역명
- * @param purposes 선택 목적들
+ * 조례 안내 조회(비동기). get_ordinance RPC + zoning_rates + permitted_uses + devperm_rules.
+ * @param pnu         19자리 PNU (앞 5자리가 시군구 코드)
+ * @param zoneName    대표 용도지역명
+ * @param purposes    선택 목적들
+ * @param userSlopePct 사용자 입력 평균 경사도(%) — 개발행위 경사도 대조용
  */
 export async function fetchOrdinance(
   pnu: string | null | undefined,
   zoneName: string | null | undefined,
   purposes: Purpose[],
+  userSlopePct?: number | null,
 ): Promise<OrdinanceResult> {
   const sgg = pnu && pnu.length >= 5 ? pnu.slice(0, 5) : null;
   const z = zoneName ?? '';
@@ -141,9 +176,10 @@ export async function fetchOrdinance(
   let sggName: string | null = null;
   let items: OrdinanceItem[] = [];
 
-  // 조례 규칙(RPC)·기본율·행위제한 병렬 조회
+  // 조례 규칙(RPC)·기본율·행위제한·개발행위기준 병렬 조회
   const ratesPromise = fetchZoningRates(sgg, z);
   const usesPromise = fetchPermittedUses(sgg, z, ps);
+  const devPromise = fetchDevPermRules(sgg);
 
   try {
     const { data, error } = await supabase.rpc('get_ordinance', {
@@ -166,7 +202,7 @@ export async function fetchOrdinance(
     // 무시하고 폴백
   }
 
-  const [rates, uses] = await Promise.all([ratesPromise, usesPromise]);
+  const [rates, uses, dev] = await Promise.all([ratesPromise, usesPromise, devPromise]);
 
   // 시군구명을 못 받았으면 sgg_codes에서 직접 조회
   if (!sggName) {
@@ -179,6 +215,11 @@ export async function fetchOrdinance(
   // DB에 조례 규칙이 없으면 일반 안내 폴백
   if (items.length === 0) {
     items = genericItems(z, ps);
+  }
+
+  // 개발행위허가 경사도·입목축적 (해당 시 추가)
+  if (dev) {
+    items.push(...devPermItems(dev, userSlopePct ?? null));
   }
 
   // 용도별 가능여부 (선택 목적 순서 유지, 상단 배치)
