@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { diagnose, LandInput, DiagnosisResult } from './engine/diagnose';
 import { Purpose, PURPOSE_LABELS } from './engine/purposes';
 import { fetchOrdinance, OrdinanceResult } from './engine/ordinance';
+import { applyOrdinance } from './engine/gradeAdjust';
 import { supabase, supabaseReady } from './lib/supabase';
 import { useAuth } from './lib/useAuth';
 import AuthModal from './components/AuthModal';
@@ -410,10 +411,15 @@ export default function App() {
     const list = (purposes.length?purposes:['house' as Purpose]).map(p=>diagnose(input,p));
     setResults(list);
     setAiText(null); setAiErr(null);
-    // 조례 안내 비동기 로드(DB)
+    // 조례 안내 비동기 로드(DB) — 도착 시 행위제한을 등급에 반영
     setOrdinance(null);
     fetchOrdinance(land?.pnu, land?.primaryUseZone, purposes)
-      .then(setOrdinance)
+      .then(ord=>{
+        setOrdinance(ord);
+        if(ord && ord.uses.length>0){
+          setResults(prev=>prev.map(r=>applyOrdinance(r, ord)));
+        }
+      })
       .catch(()=>setOrdinance(null));
   }
 
@@ -770,7 +776,7 @@ export default function App() {
                 {(result.gradeLabel==='리스크 높음'||result.gradeLabel==='불가 가능성 높음') && (
                   <div className="grade-caveat">'불가능' 판정이 아니라, 추가 확인 없이 진행하면 손실 가능성이 크다는 의미입니다.</div>
                 )}
-                {result.zone && (<div className="zone-meta">{result.zone.name} · 건폐율 {result.zone.bcrMax}%(땅의 {result.zone.bcrMax}%까지 바닥 건축) · 용적률 {result.zone.farMax}%(층수 여유)</div>)}
+                {result.zone && (<div className="zone-meta">{result.zone.name} · 건폐율 {ordinance?.rates?.bcr?.pct ?? result.zone.bcrMax}%(땅의 {ordinance?.rates?.bcr?.pct ?? result.zone.bcrMax}%까지 바닥 건축) · 용적률 {ordinance?.rates?.far?.pct ?? result.zone.farMax}%(층수 여유){ordinance?.rates?' · 지자체 조례 기준':' · 법령 일반값'}</div>)}
               </div>
               <div className="risks">
                 {result.riskItems.map(ri=>(
