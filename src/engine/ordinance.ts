@@ -5,11 +5,15 @@
  * get_ordinance RPC가 용도지역·목적에 맞는 항목을 서버에서 매칭해 반환한다.
  * 코드 수정 없이 SQL로 조례를 추가·관리할 수 있다.
  *
+ * 추가로 zoning_rates 테이블(국토부 토지이용규제 월별 데이터)에서
+ * 해당 지자체 조례의 기본 건폐율·용적률을 조회해 근거 조문과 함께 반환한다.
+ *
  * 데이터가 없는 지자체는 일반 안내(genericItems)를 클라이언트 폴백으로 붙인다.
  */
 
 import { Purpose } from './purposes';
 import { supabase, supabaseReady } from '../lib/supabase';
+import { fetchZoningRates, ZoningRates } from './zoningRates';
 
 export interface OrdinanceItem {
   key: string;
@@ -24,6 +28,8 @@ export interface OrdinanceResult {
   sggName: string | null;
   elisUrl: string | null;
   items: OrdinanceItem[];
+  /** 조례 기본 건폐율·용적률 (zoning_rates 기반, 없으면 null) */
+  rates: ZoningRates | null;
 }
 
 /** ELIS 자치법규 목록 링크 */
@@ -66,8 +72,28 @@ interface RpcRow {
   sort_order: number;
 }
 
+/** zoning_rates 기반 조례 기본율 안내 항목 생성 */
+function ratesItem(rates: ZoningRates, zoneName: string): OrdinanceItem {
+  const parts: string[] = [];
+  if (rates.bcr) parts.push(`건폐율 ${rates.bcr.pct}% 이하`);
+  if (rates.far) parts.push(`용적률 ${rates.far.pct}% 이하`);
+  const src = rates.bcr ?? rates.far;
+  const provParts: string[] = [];
+  if (rates.bcr) provParts.push(`건폐율 「${rates.bcr.ordinance}」 ${rates.bcr.provision}`);
+  if (rates.far) provParts.push(`용적률 「${rates.far.ordinance}」 ${rates.far.provision}`);
+  const dt = src?.enforceDt ? ` (시행 ${src.enforceDt})` : '';
+  const fb = rates.sidoFallback ? ' ※ 광역 지자체 조례 기준입니다.' : '';
+  return {
+    key: 'zoning_rates',
+    label: `이 지역 조례 기준: ${parts.join(' · ')}`,
+    level: 'info',
+    note: `${zoneName}의 조례상 기본 기준입니다. 근거: ${provParts.join(', ')}${dt}. 법령 일반값이 아닌 해당 지자체 조례 수치이며, 방화지구·성장관리계획구역 등 특례로 달라질 수 있습니다.${fb}`,
+    source: '국토부 토지이용규제정보(토지이음)',
+  };
+}
+
 /**
- * 조례 안내 조회(비동기). Supabase get_ordinance RPC 사용.
+ * 조례 안내 조회(비동기). Supabase get_ordinance RPC + zoning_rates 사용.
  * @param pnu      19자리 PNU (앞 5자리가 시군구 코드)
  * @param zoneName 대표 용도지역명
  * @param purposes 선택 목적들
@@ -86,11 +112,14 @@ export async function fetchOrdinance(
     // Supabase 미연결 시: 일반 안내만
     const items = genericItems(z, ps);
     if (elisUrl) items.push(elisLinkItem(null));
-    return { sggCode: sgg, sggName: null, elisUrl, items };
+    return { sggCode: sgg, sggName: null, elisUrl, items, rates: null };
   }
 
   let sggName: string | null = null;
   let items: OrdinanceItem[] = [];
+
+  // 조례 규칙(RPC)과 기본율(zoning_rates) 병렬 조회
+  const ratesPromise = fetchZoningRates(sgg, z);
 
   try {
     const { data, error } = await supabase.rpc('get_ordinance', {
@@ -113,6 +142,8 @@ export async function fetchOrdinance(
     // 무시하고 폴백
   }
 
+  const rates = await ratesPromise;
+
   // 시군구명을 못 받았으면 sgg_codes에서 직접 조회
   if (!sggName) {
     try {
@@ -126,9 +157,14 @@ export async function fetchOrdinance(
     items = genericItems(z, ps);
   }
 
+  // 조례 기본율이 있으면 최상단에 표시 (수치 + 근거 조문)
+  if (rates && z) {
+    items.unshift(ratesItem(rates, z));
+  }
+
   if (elisUrl) items.push(elisLinkItem(sggName));
 
-  return { sggCode: sgg, sggName, elisUrl, items };
+  return { sggCode: sgg, sggName, elisUrl, items, rates };
 }
 
 /** ELIS 직접 확인 항목 */
@@ -137,6 +173,6 @@ function elisLinkItem(sggName: string | null): OrdinanceItem {
     key: 'elis_link',
     label: sggName ? `${sggName} 자치법규 직접 확인` : '해당 지자체 자치법규 직접 확인',
     level: 'info',
-    note: `정확한 조례 기준은 자치법규정보시스템(ELIS)에서 ${sggName ?? '해당 지자체'}의 도시계획 조례·건축 조례를 직접 확인하세요. 건축물 높이, 건폐율·용적률 특례, 가축사육제한 거리 등 세부 수치가 조례에 규정도어 있습니다.`,
+    note: `정확한 조례 기준은 자치법규정보시스템(ELIS)에서 ${sggName ?? '해당 지자체'}의 도시계획 조례·건축 조례를 직접 확인하세요. 건축물 높이, 건폐율·용적률 특례, 가축사육제한 거리 등 세부 수치가 조례에 규정되어 있습니다.`,
   };
 }
