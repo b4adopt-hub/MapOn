@@ -2,7 +2,7 @@ name: LURIS ETL
 
 on:
   schedule:
-    - cron: '0 3 15-18 * *'   # 매월 15~18일 12:00 KST, 성공한 날 이후는 자동 스킵
+    - cron: '0 0-21/3 15-18 * *'   # 매월 15~18일 3시간 간격 시도, 성공 시 이후 자동 스킵
   workflow_dispatch:
     inputs:
       month:
