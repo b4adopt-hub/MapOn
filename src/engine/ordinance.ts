@@ -1,19 +1,17 @@
 /**
  * 지자체 조례(자치법규) 안내 레이어 — Supabase 데이터 기반
  *
- * 시군구 매핑과 조례 규칙은 Supabase 테이블(sgg_codes, ordinance_rules)에 있고,
- * get_ordinance RPC가 용도지역·목적에 맞는 항목을 서버에서 매칭해 반환한다.
- * 코드 수정 없이 SQL로 조례를 추가·관리할 수 있다.
- *
- * 추가로 zoning_rates 테이블(국토부 토지이용규제 월별 데이터)에서
- * 해당 지자체 조례의 기본 건폐율·용적률을 조회해 근거 조문과 함께 반환한다.
- *
- * 데이터가 없는 지자체는 일반 안내(genericItems)를 클라이언트 폴백으로 붙인다.
+ * 구성:
+ *  - ordinance_rules(get_ordinance RPC): 수기 큐레이션 경고·안내 규칙
+ *  - zoning_rates: 조례 기본 건폐율·용적률 (국토부 토지이용규제 월별 데이터)
+ *  - permitted_uses: 조례 기준 용도별 건축 가능/금지 (동 데이터)
+ * 데이터 없는 지자체는 일반 안내(genericItems) 폴백.
  */
 
-import { Purpose } from './purposes';
+import { Purpose, PURPOSE_LABELS } from './purposes';
 import { supabase, supabaseReady } from '../lib/supabase';
 import { fetchZoningRates, ZoningRates } from './zoningRates';
+import { fetchPermittedUses, PurposeUseResult } from './permittedUses';
 
 export interface OrdinanceItem {
   key: string;
@@ -30,6 +28,8 @@ export interface OrdinanceResult {
   items: OrdinanceItem[];
   /** 조례 기본 건폐율·용적률 (zoning_rates 기반, 없으면 null) */
   rates: ZoningRates | null;
+  /** 조례 기준 용도별 가능여부 (permitted_uses 기반) */
+  uses: PurposeUseResult[];
 }
 
 /** ELIS 자치법규 목록 링크 */
@@ -92,8 +92,32 @@ function ratesItem(rates: ZoningRates, zoneName: string): OrdinanceItem {
   };
 }
 
+/** permitted_uses 기반 용도별 가능여부 항목 생성 */
+function useItem(u: PurposeUseResult, zoneName: string): OrdinanceItem {
+  const VERDICT_LABEL = {
+    allowed: '조례상 건축 가능',
+    conditional: '조례상 조건부 가능',
+    denied: '조례상 건축 금지',
+    mixed: '조례상 용도별 상이',
+  } as const;
+  const level: OrdinanceItem['level'] =
+    u.verdict === 'denied' ? 'warning' : u.verdict === 'allowed' ? 'info' : 'caution';
+  const evLines = u.evidences
+    .map((e) => `${e.landUse}: ${e.decision}${e.condition ? ` — ${e.condition.slice(0, 100)}` : ''}`)
+    .join(' / ');
+  const law = u.evidences.find((e) => e.lawName)?.lawName;
+  const fb = u.sidoFallback ? ' ※ 광역 지자체 조례 기준입니다.' : '';
+  return {
+    key: `use_${u.purpose}`,
+    label: `${PURPOSE_LABELS[u.purpose]} — ${VERDICT_LABEL[u.verdict]}`,
+    level,
+    note: `${zoneName}에서의 용도별 판정: ${evLines}${law ? ` (근거: ${law})` : ''}. 조례 기준 사전검토이며, 농지·산지전용·개발행위허가 등 인허가는 별도입니다.${fb}`,
+    source: '국토부 토지이용규제 행위제한정보(토지이음)',
+  };
+}
+
 /**
- * 조례 안내 조회(비동기). Supabase get_ordinance RPC + zoning_rates 사용.
+ * 조례 안내 조회(비동기). get_ordinance RPC + zoning_rates + permitted_uses.
  * @param pnu      19자리 PNU (앞 5자리가 시군구 코드)
  * @param zoneName 대표 용도지역명
  * @param purposes 선택 목적들
@@ -109,17 +133,17 @@ export async function fetchOrdinance(
   const elisUrl = sgg ? elisLink(sgg) : null;
 
   if (!sgg || !supabaseReady || !supabase) {
-    // Supabase 미연결 시: 일반 안내만
     const items = genericItems(z, ps);
     if (elisUrl) items.push(elisLinkItem(null));
-    return { sggCode: sgg, sggName: null, elisUrl, items, rates: null };
+    return { sggCode: sgg, sggName: null, elisUrl, items, rates: null, uses: [] };
   }
 
   let sggName: string | null = null;
   let items: OrdinanceItem[] = [];
 
-  // 조례 규칙(RPC)과 기본율(zoning_rates) 병렬 조회
+  // 조례 규칙(RPC)·기본율·행위제한 병렬 조회
   const ratesPromise = fetchZoningRates(sgg, z);
+  const usesPromise = fetchPermittedUses(sgg, z, ps);
 
   try {
     const { data, error } = await supabase.rpc('get_ordinance', {
@@ -142,7 +166,7 @@ export async function fetchOrdinance(
     // 무시하고 폴백
   }
 
-  const rates = await ratesPromise;
+  const [rates, uses] = await Promise.all([ratesPromise, usesPromise]);
 
   // 시군구명을 못 받았으면 sgg_codes에서 직접 조회
   if (!sggName) {
@@ -157,14 +181,21 @@ export async function fetchOrdinance(
     items = genericItems(z, ps);
   }
 
-  // 조례 기본율이 있으면 최상단에 표시 (수치 + 근거 조문)
+  // 용도별 가능여부 (선택 목적 순서 유지, 상단 배치)
+  if (uses.length > 0 && z) {
+    for (const u of [...uses].reverse()) {
+      items.unshift(useItem(u, z));
+    }
+  }
+
+  // 조례 기본율은 최상단
   if (rates && z) {
     items.unshift(ratesItem(rates, z));
   }
 
   if (elisUrl) items.push(elisLinkItem(sggName));
 
-  return { sggCode: sgg, sggName, elisUrl, items, rates };
+  return { sggCode: sgg, sggName, elisUrl, items, rates, uses };
 }
 
 /** ELIS 직접 확인 항목 */
