@@ -1,17 +1,11 @@
 import { useState, useMemo } from 'react';
-import { diagnose, LandInput, DiagnosisResult } from './engine/diagnose';
+import { diagnose, LandInput } from './engine/diagnose';
 import { Purpose, PURPOSE_LABELS } from './engine/purposes';
 import { scoreLand, CATEGORY_ORDER, CATEGORY_LABELS, ScoreCategory } from './engine/landScore';
-import { fetchOrdinance, OrdinanceResult } from './engine/ordinance';
-import { applyOrdinance } from './engine/gradeAdjust';
 import { supabase, supabaseReady } from './lib/supabase';
 import { useAuth } from './lib/useAuth';
 import AuthModal from './components/AuthModal';
 import LandMap from './components/LandMap';
-
-const PURPOSES = Object.keys(PURPOSE_LABELS) as Purpose[];
-const GRADE_COLOR: Record<string,string> = {'가능성 높음':'#1a7f4b','조건부 검토':'#2d6cb8','전문가 확인 필요':'#b8862d','리스크 높음':'#c2622d','불가 가능성 높음':'#b83a3a'};
-const LEVEL_COLOR: Record<string,string> = {info:'#6b7280',caution:'#b8862d',warning:'#b83a3a'};
 
 // 강화 면책 문구 — 결과 화면과 푸터에 반복 표시(법적 방어)
 const DISCLAIMER_FULL = '본 서비스는 공공데이터와 사용자가 입력한 정보를 바탕으로 한 사전 참고자료입니다. 건축 가능 여부, 개발행위허가 가능 여부, 도로 인정 여부, 권리·점유 관계, 인허가 가능성, 가격 적정성, 입찰·매수 판단을 확정하거나 보장하지 않습니다. 최종 판단은 관할 지자체, 법원 기록, 공부서류, 현장조사 및 관련 전문가 검토를 통해 진행해야 합니다.';
@@ -293,11 +287,8 @@ export default function App() {
   const [regs, setRegs] = useState<string[]>([]);
 
   // 복수 목적 선택 + 자유 입력
-  const [purposes, setPurposes] = useState<Purpose[]>(['house']);
+  const [purposes] = useState<Purpose[]>(['house']);
   const [freeText, setFreeText] = useState('');
-
-  const [results, setResults] = useState<DiagnosisResult[]>([]);
-  const [ordinance, setOrdinance] = useState<OrdinanceResult|null>(null);
 
   // AI 분석
   const [aiLoading, setAiLoading] = useState(false);
@@ -322,7 +313,7 @@ export default function App() {
   const coreItems = infraSorted.filter(x => x.rel >= 1);
   const minorItems = infraSorted.filter(x => x.rel === 0);
 
-  // 목적 입력 전 미리보기: "토지 자체의 항목별 활용성 점수"(부동산 투자자 관점).
+  // 토지 자체의 항목별 활용성 점수(부동산 투자자 관점).
   // 도로/접도·규제·경사·용도지역·지목·면적 등 실제 토지 조건을 0~100으로 산출.
   // 입지(혐오·편의시설) 항목은 데이터 연동 전이라 status:'pending'으로 숨겨진다.
   const landScore = useMemo(() => {
@@ -350,7 +341,6 @@ export default function App() {
     return { ...result, grouped };
   }, [land, charact, regs, slope, address, useZoneRaw, jimok, areaSqm]);
 
-  function togglePurpose(p:Purpose){ setPurposes(prev=>prev.includes(p)?prev.filter(x=>x!==p):[...prev,p]); }
   function normalizeRegs(raw:string[]):string[]{
     const out=new Set<string>();
     for(const r of raw){ const name=r.replace(/\(.*\)$/,'').trim(); if(name==='도시지역'||name.includes('입안중'))continue; out.add(name); }
@@ -361,7 +351,7 @@ export default function App() {
     if(!address.trim())return;
     // 접근 제어: 비로그인은 조회 불가(로그인 유도). 로그인 사용자는 조회 시 1크레딧 차감.
     if(!auth.userId){ setShowAuth(true); return; }
-    setLooking(true); setLookupErr(null); setResults([]); setAiText(null); setAiErr(null);
+    setLooking(true); setLookupErr(null); setAiText(null); setAiErr(null);
     setBuilding(null); setBldChecked(false); setCharact(null);
     setLand(null);
     // 크레딧 차감(원자적, 서버). 부족하면 조회 중단하고 안내.
@@ -451,23 +441,6 @@ export default function App() {
       roadSideLevel:charact?.roadLevel??null,
       topographyName:charact?.topographyHeight??null,
     };
-  }
-
-  function run(){
-    const input=buildInput();
-    const list = (purposes.length?purposes:['house' as Purpose]).map(p=>diagnose(input,p));
-    setResults(list);
-    setAiText(null); setAiErr(null);
-    // 조례 안내 비동기 로드(DB) — 도착 시 행위제한을 등급에 반영
-    setOrdinance(null);
-    fetchOrdinance(land?.pnu, land?.primaryUseZone, purposes, slope?Number(slope):null)
-      .then(ord=>{
-        setOrdinance(ord);
-        if(ord && ord.uses.length>0){
-          setResults(prev=>prev.map(r=>applyOrdinance(r, ord)));
-        }
-      })
-      .catch(()=>setOrdinance(null));
   }
 
   async function runAI(){
@@ -758,12 +731,12 @@ export default function App() {
                 <span key={g} className={`infra-badge ${GRADE_META[g].cls}`}>{g} {GRADE_META[g].label}</span>
               ))}
             </div>
-            <p className="infra-danger-note">● 표시는 선택한 목적에 특히 중요한 항목입니다.</p>
+            <p className="infra-danger-note">● 표시는 특히 중요한 항목입니다.</p>
             {coreItems.map(({g,rel})=>renderInfraItem(g,rel))}
             {minorItems.length>0 && (
               <div className="infra-minor-wrap">
                 <button className="infra-minor-toggle" onClick={()=>setShowMinor(s=>!s)}>
-                  {showMinor?'이 목적에 영향이 적은 항목 접기':`이 목적에 영향이 적은 항목 ${minorItems.length}개 더 보기`} {showMinor?'▲':'▼'}
+                  {showMinor?'영향이 적은 항목 접기':`영향이 적은 항목 ${minorItems.length}개 더 보기`} {showMinor?'▲':'▼'}
                 </button>
                 {showMinor && minorItems.map(({g,rel})=>renderInfraItem(g,rel))}
               </div>
@@ -780,7 +753,7 @@ export default function App() {
               종합 {landScore.overall}점
             </span>
           </div>
-          <p className="score-lead">목적과 무관하게, <b>이 토지 자체의 조건</b>을 부동산 투자자 관점에서 항목별로 평가한 점수입니다. 도로·접도(맹지 여부)를 가장 크게 반영합니다. 점수가 높을수록 활용·환금성이 유리합니다. 아래에서 <b>목적을 선택하면</b> 목적별 등급·위험 항목·조례까지 상세 검토가 열립니다.</p>
+          <p className="score-lead">목적과 무관하게, <b>이 토지 자체의 조건</b>을 부동산 투자자 관점에서 항목별로 평가한 점수입니다. 도로·접도(맹지 여부)를 가장 크게 반영합니다. 점수가 높을수록 활용·환금성이 유리합니다.</p>
           {landScore.grouped.map(group=>(
             <div key={group.category} className="score-group">
               <div className="score-group-title">{group.label}</div>
@@ -797,6 +770,17 @@ export default function App() {
               </div>
             </div>
           ))}
+        </section>
+      )}
+
+      {land && (
+        <section className="form">
+          <div className="field">
+            <label>정밀분석 <em className="hint">원하는 활용·궁금한 점을 자유롭게 적으면 AI가 토지 데이터와 함께 종합 분석합니다</em></label>
+            <textarea className="freetext" value={freeText} onChange={e=>setFreeText(e.target.value)}
+              placeholder="예) 반려동물과 함께 살 단독주택과 작은 텃밭, 손님용 주차공간을 만들고 싶어요. / 창고로 임대 놓으면 어떨지 궁금해요." rows={4} />
+          </div>
+
           {!auth.userId ? (
             <button className="run precision" onClick={()=>setShowAuth(true)}>로그인하고 정밀분석 (5크레딧)</button>
           ) : (!auth.isAdmin && auth.credits<5) ? (
@@ -809,77 +793,9 @@ export default function App() {
         </section>
       )}
 
-      <section className="form">
-        <div className="field">
-          <label>목적 <em className="hint">복수 선택 가능</em></label>
-          <div className="chips">
-            {PURPOSES.map(p=>(<button key={p} className={`chip ${purposes.includes(p)?'active':''}`} onClick={()=>togglePurpose(p)}>{PURPOSE_LABELS[p]}</button>))}
-          </div>
-        </div>
-
-        <div className="field">
-          <label>직접 입력 <em className="hint">원하는 활용을 자유롭게 적으면 확인 항목을 정리해 드립니다</em></label>
-          <textarea className="freetext" value={freeText} onChange={e=>setFreeText(e.target.value)}
-            placeholder="예) 반려동물과 함께 살 단독주택과 작은 텃밭, 손님용 주차공간을 만들고 싶어요." rows={3} />
-        </div>
-
-        <div className="btn-row">
-          <button className="run" onClick={run}>사전검토 실행</button>
-          <button className="run ai" onClick={runAI} disabled={aiLoading}>{aiLoading?'정리 중…':'확인 항목 생성'}</button>
-        </div>
-      </section>
-
-      {results.length>0 && (
-        <section className="result">
-          {ordinance && ordinance.items.length>0 && (
-            <div className="ordinance">
-              <h3 className="ord-title">지자체 조례 확인 항목{ordinance.sggName?` · ${ordinance.sggName}`:''}</h3>
-              <p className="ord-lead">용도지역·규제는 자동 조회됐지만, 건축물 높이·건폐율 특례·가축사육 거리 등 세부 기준은 지자체 조례로 정해집니다. 아래 항목을 조례에서 확인하세요.</p>
-              {ordinance.items.map(it=>(
-                <div key={it.key} className={`ord-item ord-${it.level}`}>
-                  <div className="ord-item-label">{it.label}</div>
-                  <div className="ord-item-note">{it.note}</div>
-                  {it.source && <div className="ord-item-src">근거: {it.source}</div>}
-                </div>
-              ))}
-              {ordinance.elisUrl && (
-                <a className="ord-elis" href={ordinance.elisUrl} target="_blank" rel="noopener noreferrer">
-                  {ordinance.sggName?`${ordinance.sggName} 자치법규(ELIS) 열기`:'자치법규(ELIS) 열기'} ↗
-                </a>
-              )}
-            </div>
-          )}
-          {results.map((result)=>(
-            <div key={result.purpose} className="result-block">
-              <div className="grade-card">
-                <div className="grade-label">{result.purposeLabel}</div>
-                <div className="grade" style={{color:GRADE_COLOR[result.gradeLabel]}}>{result.gradeLabel}</div>
-                <div className="grade-desc">{result.gradeDescription}</div>
-                {(result.gradeLabel==='리스크 높음'||result.gradeLabel==='불가 가능성 높음') && (
-                  <div className="grade-caveat">'불가능' 판정이 아니라, 추가 확인 없이 진행하면 손실 가능성이 크다는 의미입니다.</div>
-                )}
-                {result.zone && (<div className="zone-meta">{result.zone.name} · 건폐율 {ordinance?.rates?.bcr?.pct ?? result.zone.bcrMax}%(땅의 {ordinance?.rates?.bcr?.pct ?? result.zone.bcrMax}%까지 바닥 건축) · 용적률 {ordinance?.rates?.far?.pct ?? result.zone.farMax}%(층수 여유){ordinance?.rates?' · 지자체 조례 기준':' · 법령 일반값'}</div>)}
-              </div>
-              <div className="risks">
-                {result.riskItems.map(ri=>(
-                  <div key={ri.key} className="risk">
-                    <span className="dot" style={{background:LEVEL_COLOR[ri.level]}} />
-                    <div><div className="risk-label">{ri.label}</div><div className="risk-note">{ri.note}</div></div>
-                  </div>
-                ))}
-              </div>
-              <div className="recs">
-                <div className="chips">{result.recommendations.map(r=>(<span key={r} className="chip static">{r}</span>))}</div>
-              </div>
-            </div>
-          ))}
-          <p className="disclaimer">{DISCLAIMER_FULL}</p>
-        </section>
-      )}
-
       {(aiText || aiErr) && (
         <section className="result ai-result">
-          <h3 className="ai-title">확인 항목 정리</h3>
+          <h3 className="ai-title">정밀분석 결과</h3>
           {aiErr && <div className="lookup-err">{aiErr}</div>}
           {aiText && <div className="ai-text">{aiText}</div>}
           <p className="disclaimer">{DISCLAIMER_FULL}</p>
