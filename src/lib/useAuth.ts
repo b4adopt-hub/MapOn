@@ -9,11 +9,13 @@ export interface AuthUser {
   isAdmin: boolean;
   isExpert: boolean;
   expertStatus: string | null;
+  /** 남은 크레딧. 관리자는 무제한(Infinity). 비로그인은 0. */
+  credits: number;
 }
 
 const EMPTY: AuthUser = {
   loading: false, userId: null, email: null, displayName: null,
-  isAdmin: false, isExpert: false, expertStatus: null,
+  isAdmin: false, isExpert: false, expertStatus: null, credits: 0,
 };
 
 /**
@@ -28,15 +30,17 @@ export function useAuth() {
     if (!supabase) { setState({ ...EMPTY, userId, email }); return; }
     try {
       const [{ data: prof }, { data: exp }] = await Promise.all([
-        supabase.from('profiles').select('role,display_name').eq('id', userId).maybeSingle(),
+        supabase.from('profiles').select('role,display_name,credits').eq('id', userId).maybeSingle(),
         supabase.from('experts').select('status').eq('id', userId).maybeSingle(),
       ]);
+      const isAdmin = (prof as { role?: string } | null)?.role === 'admin';
       setState({
         loading: false, userId, email,
         displayName: (prof as { display_name?: string } | null)?.display_name ?? null,
-        isAdmin: (prof as { role?: string } | null)?.role === 'admin',
+        isAdmin,
         isExpert: !!exp,
         expertStatus: (exp as { status?: string } | null)?.status ?? null,
+        credits: isAdmin ? Infinity : ((prof as { credits?: number } | null)?.credits ?? 0),
       });
     } catch {
       setState({ ...EMPTY, userId, email });
@@ -79,5 +83,26 @@ export function useAuth() {
     if (supabase) await supabase.auth.signOut();
   }, []);
 
-  return { ...state, signIn, signUp, signOut };
+  /**
+   * 크레딧 1 차감(원자적, 서버 RPC). 성공 시 로컬 상태도 갱신.
+   * 반환: { ok:true, remaining } 성공 / { ok:false, reason } 실패.
+   * 관리자는 서버가 -1(무한) 반환 → remaining=Infinity.
+   */
+  const consumeCredit = useCallback(async (): Promise<
+    { ok: true; remaining: number } | { ok: false; reason: 'auth' | 'insufficient' | 'error' }
+  > => {
+    if (!supabase) return { ok: false, reason: 'error' };
+    const { data, error } = await supabase.rpc('consume_credit');
+    if (error) {
+      const msg = error.message || '';
+      if (msg.includes('INSUFFICIENT_CREDITS')) return { ok: false, reason: 'insufficient' };
+      if (msg.includes('AUTH_REQUIRED')) return { ok: false, reason: 'auth' };
+      return { ok: false, reason: 'error' };
+    }
+    const remaining = typeof data === 'number' && data >= 0 ? data : Infinity;
+    setState(prev => ({ ...prev, credits: remaining }));
+    return { ok: true, remaining };
+  }, []);
+
+  return { ...state, signIn, signUp, signOut, consumeCredit };
 }
