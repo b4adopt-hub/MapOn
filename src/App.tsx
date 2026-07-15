@@ -9,7 +9,6 @@ import { useAuth } from './lib/useAuth';
 import AuthModal from './components/AuthModal';
 import LandMap from './components/LandMap';
 
-const PURPOSES = Object.keys(PURPOSE_LABELS) as Purpose[];
 const GRADE_COLOR: Record<string,string> = {'가능성 높음':'#1a7f4b','조건부 검토':'#2d6cb8','전문가 확인 필요':'#b8862d','리스크 높음':'#c2622d','불가 가능성 높음':'#b83a3a'};
 const LEVEL_COLOR: Record<string,string> = {info:'#6b7280',caution:'#b8862d',warning:'#b83a3a'};
 
@@ -273,6 +272,30 @@ function infraRelevance(key:string, purposes:Purpose[]):number{
   return Math.max(...purposes.map(p=>m[p] ?? 1));
 }
 
+// 정밀분석 입력(자유 텍스트)에서 관련 활용 목적을 추출한다.
+// 사용자가 쓴 내용에 맞는 목적만 룰엔진으로 판정하기 위함(전체 목적 무차별 표시 방지).
+const PURPOSE_KEYWORDS: Record<Purpose, string[]> = {
+  house:      ['주택','집','전원주택','거주','살','단독','귀촌','귀농','전원생활','살림'],
+  farmhut:    ['농막','농사','밭','텃밭','컨테이너','농자재','농기구','경작'],
+  warehouse:  ['창고','물류','보관','적재','자재','임대창고','저장','물건'],
+  cafe:       ['카페','커피','음식점','식당','근생','상가','펜션','숙박','민박','베이커리','디저트','영업'],
+  camping:    ['캠핑','글램핑','야영','오토캠핑','카라반'],
+  petfacility:['반려동물','애견','펫','강아지','고양이','동물','보호소','훈련소','호텔','유치원','장묘','분양'],
+  fence:      ['울타리','담장','펜스','경계','철책'],
+  landscape:  ['조경','마당','정원','가든','화단','수목','잔디'],
+  parking:    ['주차','주차장','차고','차량'],
+  solar:      ['태양광','발전','태양열','신재생'],
+};
+function detectPurposes(text:string):Purpose[]{
+  const t = (text||'').replace(/\s/g,'');
+  if(!t) return [];
+  const found:Purpose[] = [];
+  (Object.keys(PURPOSE_KEYWORDS) as Purpose[]).forEach(p=>{
+    if(PURPOSE_KEYWORDS[p].some(k=>t.includes(k))) found.push(p);
+  });
+  return found;
+}
+
 export default function App() {
   const auth = useAuth();
   const [showAuth, setShowAuth] = useState(false);
@@ -453,12 +476,13 @@ export default function App() {
     };
   }
 
-  async function runAI(){
+  async function runAI(targets:Purpose[]){
     setAiLoading(true); setAiErr(null); setAiText(null);
     try{
       const input=buildInput();
-      // 룰엔진 결과(사실 근거) 동봉
-      const ruleResults = (purposes.length?purposes:['house' as Purpose]).map(p=>{
+      const useTargets = targets.length?targets:['house' as Purpose];
+      // 룰엔진 결과(사실 근거) 동봉 — 사용자가 입력한 활용에 해당하는 목적만
+      const ruleResults = useTargets.map(p=>{
         const r=diagnose(input,p);
         return {
           purposeLabel:r.purposeLabel, gradeLabel:r.gradeLabel,
@@ -475,7 +499,7 @@ export default function App() {
           landShape:charact?.topographyShape??null, landUse:charact?.landUse??null,
           hasBuilding:building?.hasBuilding??null, buildingPurpose:building?.mainPurpose??null,
         }:null,
-        purposes: purposes.map(p=>PURPOSE_LABELS[p]),
+        purposes: useTargets.map(p=>PURPOSE_LABELS[p]),
         freeText: freeText.trim()||undefined,
         ruleResults,
       };
@@ -494,14 +518,14 @@ export default function App() {
     finally{ setAiLoading(false); }
   }
 
-  // 룰엔진 사전검토: 전체 활용 목적으로 등급을 산출하고, 지자체 조례를 조회해 반영.
-  // (목적 선택 UI가 없으므로 이 땅으로 가능한 활용 전반을 객관 표로 보여준다.)
-  function runRuleCheck(){
+  // 룰엔진 사전검토: 입력에서 감지한 활용 목적만 등급을 산출하고, 지자체 조례를 조회해 반영.
+  function runRuleCheck(targets:Purpose[]){
+    const useTargets = targets.length?targets:['house' as Purpose];
     const input=buildInput();
-    const list = PURPOSES.map(p=>diagnose(input,p));
+    const list = useTargets.map(p=>diagnose(input,p));
     setResults(list);
     setOrdinance(null);
-    fetchOrdinance(land?.pnu, land?.primaryUseZone, PURPOSES, slope?Number(slope):null)
+    fetchOrdinance(land?.pnu, land?.primaryUseZone, useTargets, slope?Number(slope):null)
       .then(ord=>{
         setOrdinance(ord);
         if(ord && ord.uses.length>0){
@@ -511,7 +535,7 @@ export default function App() {
       .catch(()=>setOrdinance(null));
   }
 
-  // 정밀분석: 5크레딧 차감 후 (1)객관적 사전검토(등급·위험·조례) + (2)AI 종합분석을 함께 실행.
+  // 정밀분석: 5크레딧 차감 후, 입력한 활용을 해석해 (1)해당 목적 사전검토(등급·위험·조례) + (2)AI 종합분석.
   async function runPrecision(){
     if(!auth.userId){ setShowAuth(true); return; }
     const paid = await auth.consumeCredit(5);
@@ -524,8 +548,10 @@ export default function App() {
       if(paid.reason==='auth') setShowAuth(true);
       return;
     }
-    runRuleCheck();      // 객관적 사전검토(등급·위험·조례) 먼저
-    await runAI();        // 이어 AI 종합분석
+    // 채팅창 입력에서 관련 활용 목적을 감지 → 그 목적만 룰엔진으로 판정
+    const targets = detectPurposes(freeText);
+    runRuleCheck(targets);   // 입력한 활용의 객관 사전검토(등급·위험·조례)
+    await runAI(targets);     // 그 결과를 근거로 AI가 종합 분석·재평가
   }
 
   function renderInfraItem(g:InfraGroup, rel:number){
@@ -804,7 +830,7 @@ export default function App() {
       {land && (
         <section className="form">
           <div className="field">
-            <label>정밀분석 <em className="hint">원하는 활용·궁금한 점을 자유롭게 적으면, 객관 사전검토(용도별 등급·조례)와 AI 종합분석을 함께 보여드립니다</em></label>
+            <label>정밀분석 <em className="hint">원하는 활용을 적으면, 그 활용을 해석해 해당 용도의 사전검토(등급·위험·조례)를 판정하고 AI가 종합 분석합니다</em></label>
             <textarea className="freetext" value={freeText} onChange={e=>setFreeText(e.target.value)}
               placeholder="예) 반려동물과 함께 살 단독주택과 작은 텃밭, 손님용 주차공간을 만들고 싶어요. / 창고로 임대 놓으면 어떨지 궁금해요." rows={4} />
           </div>
@@ -823,7 +849,7 @@ export default function App() {
 
       {results.length>0 && (
         <section className="result">
-          <h3 className="result-title">사전검토 결과 <span className="result-sub">— 이 토지로 가능한 활용별 등급(객관 판정)</span></h3>
+          <h3 className="result-title">사전검토 결과 <span className="result-sub">— 입력하신 활용 기준 등급·위험·조례(객관 판정)</span></h3>
           {ordinance && ordinance.items.length>0 && (
             <div className="ordinance">
               <h3 className="ord-title">지자체 조례 확인 항목{ordinance.sggName?` · ${ordinance.sggName}`:''}</h3>
