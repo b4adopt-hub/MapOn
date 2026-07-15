@@ -84,15 +84,15 @@ export function useAuth() {
   }, []);
 
   /**
-   * 크레딧 1 차감(원자적, 서버 RPC). 성공 시 로컬 상태도 갱신.
+   * 크레딧 차감(원자적, 서버 RPC). amount만큼 차감(기본 1). 성공 시 로컬 상태도 갱신.
    * 반환: { ok:true, remaining } 성공 / { ok:false, reason } 실패.
    * 관리자는 서버가 -1(무한) 반환 → remaining=Infinity.
    */
-  const consumeCredit = useCallback(async (): Promise<
+  const consumeCredit = useCallback(async (amount: number = 1): Promise<
     { ok: true; remaining: number } | { ok: false; reason: 'auth' | 'insufficient' | 'error' }
   > => {
     if (!supabase) return { ok: false, reason: 'error' };
-    const { data, error } = await supabase.rpc('consume_credit');
+    const { data, error } = await supabase.rpc('consume_credit', { p_amount: amount });
     if (error) {
       const msg = error.message || '';
       if (msg.includes('INSUFFICIENT_CREDITS')) return { ok: false, reason: 'insufficient' };
