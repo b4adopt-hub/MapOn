@@ -2,11 +2,11 @@ name: LURIS ETL
 
 on:
   schedule:
-    - cron: '0 0-21/3 15-18 * *'   # 매월 15~18일 3시간 간격 시도, 성공 시 이후 자동 스킵
+    - cron: '0 0-21/3 15-18 * *'
   workflow_dispatch:
     inputs:
       month:
-        description: 'YYYYMM (release 모드에서 필수, auto 모드는 비워도 됨)'
+        description: 'YYYYMM (release 모드 필수)'
         required: false
       mode:
         description: '데이터 취득 방식'
@@ -21,13 +21,13 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-
       - name: 의존성 설치
-        run: pip install --quiet openpyxl psycopg2-binary requests
+        run: |
+          pip install --quiet openpyxl psycopg2-binary requests
+          sudo apt-get -y install p7zip-full >/dev/null 2>&1 || true
 
       - name: 적재 이력 가드 (스케줄만)
         id: guard
@@ -36,39 +36,49 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: python etl/check_loaded.py
 
-      - name: 데이터 취득 (auto - eum.go.kr 다운로드)
+      - name: 데이터 취득 (auto)
         if: ${{ steps.guard.outputs.skip != 'true' && (github.event_name == 'schedule' || inputs.mode == 'auto') }}
         run: python etl/fetch_eum.py --out data
 
-      - name: 데이터 취득 (release - 릴리스 자산)
+      - name: 데이터 취득 (release)
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'release' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          test -n "${{ inputs.month }}" || { echo 'release 모드는 month 입력 필수'; exit 1; }
-          mkdir -p data
-          gh release download "data-${{ inputs.month }}" --dir data
-          cd data && for z in *.zip; do [ -e "$z" ] && unzip -o "$z"; done; true
-          ls -la
+          test -n "${{ inputs.month }}" || { echo 'month 필수'; exit 1; }
+          mkdir -p data && cd data
+          gh release download "data-${{ inputs.month }}" --dir .
+          echo '=== 자산 ===' && ls -la
+          for f in *.zip.001 *.7z.001; do [ -e "$f" ] && 7z x -y "$f" >/dev/null; done
+          for z in *.zip; do
+            [ -e "$z" ] || continue
+            b="${z%.zip}"
+            if ls "$b".z[0-9][0-9] >/dev/null 2>&1; then 7z x -y "$z" >/dev/null
+            else unzip -o "$z" >/dev/null || 7z x -y "$z" >/dev/null || true; fi
+          done
+          echo '=== 해제 후 ===' && ls -la
 
       - name: 파일·월 확정
         id: resolve
         if: ${{ steps.guard.outputs.skip != 'true' }}
         run: |
-          LAW=$(ls data/*법령정보*.xlsx | head -1)
-          ACT=$(ls data/*행위제한정보*.xlsx | head -1)
+          LAW=$(ls data/*법령정보*.xlsx 2>/dev/null | head -1)
+          ACT=$(ls data/*행위제한정보*.xlsx 2>/dev/null | head -1)
+          test -n "$LAW$ACT" || { echo '법령정보/행위제한정보 xlsx 둘 다 없음'; ls -la data; exit 1; }
           MONTH="${{ inputs.month }}"
           if [ -z "$MONTH" ]; then
-            MONTH=$(ls data/*법령정보*.xlsx | grep -oE '20[0-9]{6}' | head -1 | cut -c1-6)
+            MONTH=$(ls data/*.xlsx | grep -oE '20[0-9]{6}' | head -1 | cut -c1-6)
           fi
           test -n "$MONTH" || MONTH=$(date +%Y%m)
-          echo "law=$LAW" >> "$GITHUB_OUTPUT"
-          echo "act=$ACT" >> "$GITHUB_OUTPUT"
+          ARGS=""
+          [ -n "$LAW" ] && ARGS="$ARGS --law \"$LAW\""
+          [ -n "$ACT" ] && ARGS="$ARGS --act \"$ACT\""
+          echo "args=$ARGS" >> "$GITHUB_OUTPUT"
           echo "month=$MONTH" >> "$GITHUB_OUTPUT"
-          echo "적재 대상: $LAW / $ACT / month=$MONTH"
+          echo "적재 대상: law=$LAW act=$ACT month=$MONTH"
 
       - name: Supabase 적재
         if: ${{ steps.guard.outputs.skip != 'true' }}
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: python etl/load_luris.py --law "${{ steps.resolve.outputs.law }}" --act "${{ steps.resolve.outputs.act }}" --month "${{ steps.resolve.outputs.month }}"
+        run: eval python etl/load_luris.py ${{ steps.resolve.outputs.args }} --month "${{ steps.resolve.outputs.month }}"
