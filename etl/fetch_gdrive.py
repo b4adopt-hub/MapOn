@@ -25,9 +25,8 @@ def extract_id(s):
 
 
 def download(file_id, out_dir):
-    out_tmpl = os.path.join(out_dir, f'{file_id}.download')
-    # gdown이 content-disposition의 실제 파일명으로 저장하도록 output은 디렉토리 지정
-    path = gdown.download(id=file_id, output=out_dir + os.sep, quiet=False, fuzzy=True)
+    # gdown 6.x: id= 로 지정, output은 디렉토리(끝에 os.sep)면 서버 파일명 유지
+    path = gdown.download(id=file_id, output=out_dir + os.sep, quiet=False)
     if not path or not os.path.exists(path):
         sys.exit(f'[fetch_gdrive] id={file_id} 다운로드 실패. 공유가 "링크가 있는 모든 사용자(뷰어)"인지 확인하세요.')
     size = os.path.getsize(path)
