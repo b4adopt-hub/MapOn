@@ -2,25 +2,23 @@
 """구글 드라이브 공유 링크에서 LURIS 파일 다운로드.
 방식 A(링크 고정): 워크플로 Secrets/입력으로 파일 ID를 받아 내려받는다.
 
-구글 드라이브 특성:
- - 100MB 미만 파일도 대용량으로 분류되면 '바이러스 검사 불가' 확인 페이지(HTML)를 먼저 반환한다.
- - 이 경우 응답에서 confirm 토큰(또는 uuid)을 뽑아 재요청하면 실제 파일을 받는다.
- - 신형 엔드포인트는 https://drive.usercontent.google.com/download?id=..&export=download&confirm=t 로 처리된다.
+구글 드라이브 다운로드는 파일 크기·상태에 따라 경로가 갈린다:
+ - 작은 파일: uc?export=download 로 바로 바이너리.
+ - 큰 파일(대용량 스캔 불가): 확인 HTML을 먼저 주고, 그 안의 form(action/confirm/uuid)을
+   그대로 POST 또는 GET 재요청해야 실제 파일이 온다.
+두 엔드포인트(uc, usercontent)를 순차 시도하고, 응답이 실제 파일(비 HTML)인지 확인한다.
 
 사용법:
-  python fetch_gdrive.py --law-id <파일ID> --act-id <파일ID> --out data
-  ID 하나만 줘도 됨(그 파일만 받음). ID는 공유링크
-  https://drive.google.com/file/d/<여기>/view 의 가운데 값.
+  python fetch_gdrive.py --law-id <ID/링크> --act-id <ID/링크> --out data
 """
 import argparse, os, re, sys, zipfile
 import requests
 
 UA = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36'}
-MIN_SIZE = 1_000_000  # 이보다 작으면 데이터 파일 아님(HTML 경고 페이지 등)
+MIN_SIZE = 1_000_000
 
 
 def extract_id(s):
-    """공유 링크나 순수 ID에서 파일 ID만 뽑는다."""
     if not s:
         return None
     m = re.search(r'/d/([A-Za-z0-9_-]{20,})', s) or re.search(r'[?&]id=([A-Za-z0-9_-]{20,})', s)
@@ -31,28 +29,27 @@ def extract_id(s):
     sys.exit(f'[fetch_gdrive] 파일 ID를 해석하지 못함: {s[:60]}')
 
 
-def download(file_id, out_dir):
-    sess = requests.Session()
-    base = 'https://drive.usercontent.google.com/download'
-    params = {'id': file_id, 'export': 'download'}
-    r = sess.get(base, params=params, headers=UA, stream=True, timeout=300)
+def is_html(resp):
+    return 'text/html' in resp.headers.get('content-type', '').lower()
 
-    # 확인 페이지(HTML)면 confirm 토큰을 뽑아 재요청
-    ctype = r.headers.get('content-type', '')
-    if 'text/html' in ctype:
-        html = r.text
-        token = None
-        m = re.search(r'name="confirm"\s+value="([^"]+)"', html) or re.search(r'[?&]confirm=([A-Za-z0-9_-]+)', html)
-        if m:
-            token = m.group(1)
-        uuid_m = re.search(r'name="uuid"\s+value="([^"]+)"', html)
-        params2 = {'id': file_id, 'export': 'download', 'confirm': token or 't'}
-        if uuid_m:
-            params2['uuid'] = uuid_m.group(1)
-        r = sess.get(base, params=params2, headers=UA, stream=True, timeout=900)
 
-    r.raise_for_status()
-    # 파일명 추출
+def parse_confirm_form(html):
+    """확인 페이지에서 form action과 hidden 파라미터를 추출."""
+    action = None
+    m = re.search(r'<form[^>]+id="download-form"[^>]+action="([^"]+)"', html) \
+        or re.search(r'<form[^>]+action="([^"]+)"[^>]*>', html)
+    if m:
+        action = m.group(1).replace('&amp;', '&')
+    params = {}
+    for nm, val in re.findall(r'<input[^>]+type="hidden"[^>]+name="([^"]+)"[^>]+value="([^"]*)"', html):
+        params[nm] = val
+    # 순서 반대 속성도 대응
+    for val, nm in re.findall(r'<input[^>]+value="([^"]*)"[^>]+name="([^"]+)"', html):
+        params.setdefault(nm, val)
+    return action, params
+
+
+def stream_to_file(r, out_dir, file_id):
     cd = r.headers.get('content-disposition', '')
     fname = ''
     m = re.search(r"filename\*=UTF-8''([^;]+)", cd)
@@ -75,13 +72,62 @@ def download(file_id, out_dir):
         for chunk in r.iter_content(1 << 20):
             f.write(chunk); size += len(chunk)
     print(f'[fetch_gdrive] {fname} ({size:,} bytes, {r.headers.get("content-type")})')
-    if size < MIN_SIZE:
-        # HTML이 저장된 경우 내용 일부 로그
-        with open(path, 'rb') as f:
-            head = f.read(500)
-        print('[fetch_gdrive] 크기 미달 — 파일이 아니라 페이지일 수 있음. 앞부분:', head[:300])
-        sys.exit('[fetch_gdrive] 다운로드 실패. 공유 설정이 "링크가 있는 모든 사용자"인지 확인하세요.')
-    return path
+    return path, size
+
+
+def download(file_id, out_dir):
+    sess = requests.Session()
+    endpoints = [
+        'https://drive.google.com/uc',
+        'https://drive.usercontent.google.com/download',
+    ]
+    last_html = None
+    for base in endpoints:
+        try:
+            r = sess.get(base, params={'id': file_id, 'export': 'download'},
+                         headers=UA, stream=True, timeout=300)
+        except requests.RequestException as e:
+            print(f'[fetch_gdrive] {base} 요청 실패: {type(e).__name__}')
+            continue
+        if r.status_code == 404:
+            print(f'[fetch_gdrive] {base} -> 404, 다음 엔드포인트')
+            continue
+
+        if not is_html(r):
+            # 바로 파일
+            path, size = stream_to_file(r, out_dir, file_id)
+            if size >= MIN_SIZE:
+                return path
+            os.remove(path)
+            print('[fetch_gdrive] 크기 미달 — 다음 시도')
+            continue
+
+        # 확인 페이지 → form 파싱 후 재요청
+        html = r.text
+        last_html = html
+        action, params = parse_confirm_form(html)
+        if not action:
+            action = 'https://drive.usercontent.google.com/download'
+        if action.startswith('/'):
+            action = 'https://drive.google.com' + action
+        params.setdefault('id', file_id)
+        params.setdefault('export', 'download')
+        params.setdefault('confirm', 't')
+        print(f'[fetch_gdrive] 확인 페이지 처리 → {action} params={list(params.keys())}')
+        try:
+            r2 = sess.get(action, params=params, headers=UA, stream=True, timeout=900)
+        except requests.RequestException as e:
+            print(f'[fetch_gdrive] 확인 재요청 실패: {type(e).__name__}')
+            continue
+        if r2.ok and not is_html(r2):
+            path, size = stream_to_file(r2, out_dir, file_id)
+            if size >= MIN_SIZE:
+                return path
+            os.remove(path)
+
+    if last_html:
+        print('[fetch_gdrive] 확인 페이지 앞부분:', re.sub(r'\s+', ' ', last_html[:400]))
+    sys.exit(f'[fetch_gdrive] id={file_id} 다운로드 실패. 공유가 "링크가 있는 모든 사용자"인지 확인하세요.')
 
 
 def unzip_all(out_dir):
