@@ -345,7 +345,8 @@ Deno.serve(async (req: Request) => {
       cadResp = await cadastralByPnu(pnu, KEY);
     } else if (address) {
       coord = await geocode(address, addressType, KEY);
-      if (!coord && addressType === 'ROAD') coord = await geocode(address, 'PARCEL', KEY);
+      // 지정 타입 실패 시 반대 타입으로도 시도(도로명↔지번 양방향 폴백)
+      if (!coord) coord = await geocode(address, addressType === 'ROAD' ? 'PARCEL' : 'ROAD', KEY);
       if (!coord) return ok(empty(null, address, '주소를 좌표로 변환하지 못했습니다. 지번주소로 다시 시도해 보세요.'));
       cadResp = await cadastralByPoint(coord.lat, coord.lng, KEY);
     }
