@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { diagnose, LandInput, DiagnosisResult } from './engine/diagnose';
-import { Purpose, PURPOSE_LABELS, GRADE_RANK } from './engine/purposes';
+import { Purpose, PURPOSE_LABELS } from './engine/purposes';
+import { scoreLand, CATEGORY_ORDER, CATEGORY_LABELS, ScoreCategory } from './engine/landScore';
 import { fetchOrdinance, OrdinanceResult } from './engine/ordinance';
 import { applyOrdinance } from './engine/gradeAdjust';
 import { supabase, supabaseReady } from './lib/supabase';
@@ -321,10 +322,10 @@ export default function App() {
   const coreItems = infraSorted.filter(x => x.rel >= 1);
   const minorItems = infraSorted.filter(x => x.rel === 0);
 
-  // 목적 입력 전 미리보기: 조회된 토지를 전체 목적으로 진단해 목적별 점수(0~100) 산출.
-  // 점수 = (최악등급rank 4 - 해당 등급rank) / 4 * 100  (높을수록 유리).
-  // 이 값들의 평균이 "이 땅의 종합 활용 점수".
-  const purposeScores = useMemo(() => {
+  // 목적 입력 전 미리보기: "토지 자체의 항목별 활용성 점수"(부동산 투자자 관점).
+  // 도로/접도·규제·경사·용도지역·지목·면적 등 실제 토지 조건을 0~100으로 산출.
+  // 입지(혐오·편의시설) 항목은 데이터 연동 전이라 status:'pending'으로 숨겨진다.
+  const landScore = useMemo(() => {
     if (!land) return null;
     const base: LandInput = {
       pnu: land.pnu ?? undefined,
@@ -339,13 +340,14 @@ export default function App() {
       roadSideLevel: charact?.roadLevel ?? null,
       topographyName: charact?.topographyHeight ?? null,
     };
-    const rows = PURPOSES.map(p => {
-      const d = diagnose(base, p);
-      const score = Math.round(((4 - GRADE_RANK[d.grade]) / 4) * 100);
-      return { purpose: p, label: PURPOSE_LABELS[p], score, gradeLabel: d.gradeLabel };
-    }).sort((a, b) => b.score - a.score);
-    const avg = Math.round(rows.reduce((s, r) => s + r.score, 0) / rows.length);
-    return { rows, avg };
+    const result = scoreLand(base);
+    // 카테고리별로 그룹핑(측정된 항목만 표시). pending 항목은 데이터가 채워지면 자동 등장.
+    const grouped = CATEGORY_ORDER.map((cat: ScoreCategory) => ({
+      category: cat,
+      label: CATEGORY_LABELS[cat],
+      items: result.items.filter(i => i.category === cat && i.status === 'measured' && i.score != null),
+    })).filter(g => g.items.length > 0);
+    return { ...result, grouped };
   }, [land, charact, regs, slope, address, useZoneRaw, jimok, areaSqm]);
 
   function togglePurpose(p:Purpose){ setPurposes(prev=>prev.includes(p)?prev.filter(x=>x!==p):[...prev,p]); }
@@ -754,26 +756,31 @@ export default function App() {
         )}
       </section>
 
-      {land && purposeScores && (
+      {land && landScore && landScore.overall!=null && (
         <section className="form score-card">
           <div className="score-head">
-            <span className="score-title">이 토지의 활용 점수</span>
-            <span className="score-avg" style={{color: purposeScores.avg>=70?'#1a7f4b':purposeScores.avg>=45?'#b8862d':'#c2622d'}}>
-              종합 {purposeScores.avg}점
+            <span className="score-title">이 토지의 활용성 점수</span>
+            <span className="score-avg" style={{color: landScore.overall>=70?'#1a7f4b':landScore.overall>=45?'#b8862d':'#c2622d'}}>
+              종합 {landScore.overall}점
             </span>
           </div>
-          <p className="score-lead">조회한 토지를 모든 활용 목적으로 사전검토한 <b>목적별 점수</b>입니다. 점수가 높을수록 그 용도로 쓰기에 유리합니다. 아래에서 <b>원하는 목적을 선택하면</b> 등급·위험 항목·조례까지 상세 검토가 열립니다.</p>
-          <div className="score-bars">
-            {purposeScores.rows.map(r=>(
-              <div key={r.purpose} className="score-row">
-                <span className="score-label">{r.label}</span>
-                <div className="score-track">
-                  <div className="score-fill" style={{width:`${r.score}%`, background: r.score>=70?'#1a7f4b':r.score>=45?'#b8862d':'#c2622d'}} />
-                </div>
-                <span className="score-num">{r.score}</span>
+          <p className="score-lead">목적과 무관하게, <b>이 토지 자체의 조건</b>을 부동산 투자자 관점에서 항목별로 평가한 점수입니다. 도로·접도(맹지 여부)를 가장 크게 반영합니다. 점수가 높을수록 활용·환금성이 유리합니다. 아래에서 <b>목적을 선택하면</b> 목적별 등급·위험 항목·조례까지 상세 검토가 열립니다.</p>
+          {landScore.grouped.map(group=>(
+            <div key={group.category} className="score-group">
+              <div className="score-group-title">{group.label}</div>
+              <div className="score-bars">
+                {group.items.map(it=>(
+                  <div key={it.key} className="score-row" title={it.note}>
+                    <span className="score-label">{it.label}</span>
+                    <div className="score-track">
+                      <div className="score-fill" style={{width:`${it.score}%`, background: (it.score as number)>=70?'#1a7f4b':(it.score as number)>=45?'#b8862d':'#c2622d'}} />
+                    </div>
+                    <span className="score-num">{it.score}</span>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </div>
+          ))}
           <div className="score-cta">↓ 목적을 선택하고 상세 사전검토를 실행하세요</div>
         </section>
       )}
