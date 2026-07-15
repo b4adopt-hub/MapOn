@@ -5,6 +5,9 @@ zoning_rates: 시군구x용도지역 건폐율(bcr)/용적률(far), 기본율/�
     (방화지구 완화·성장관리구역 등 특례가 같은 조의 별도 항에 붙는 구조를 배제)
 permitted_uses: 시군구x용도지역지구x토지이용행위 가능여부
 같은 --month 재실행 시 해당 월 데이터를 삭제 후 재적재 (멱등)
+
+--law, --act 는 각각 선택적. 한쪽만 주면 그 테이블만 적재한다.
+(행위제한정보 파일이 50MB로 커 릴리스 첨부가 어려울 때, 법령정보만 먼저 전국 적재하는 용도)
 """
 import argparse, io, os, re, sys, csv
 from collections import defaultdict, Counter
@@ -118,10 +121,12 @@ def copy_rows(cur, table, cols, rows, month, batch=50000):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--law', required=True)
-    ap.add_argument('--act', required=True)
+    ap.add_argument('--law', default=None)
+    ap.add_argument('--act', default=None)
     ap.add_argument('--month', required=True)
     args = ap.parse_args()
+    if not args.law and not args.act:
+        sys.exit('--law 또는 --act 중 최소 하나는 필요')
     url = os.environ.get('DATABASE_URL')
     if not url:
         sys.exit('DATABASE_URL 환경변수 필요')
@@ -130,18 +135,24 @@ def main():
     conn.autocommit = False
     cur = conn.cursor()
 
-    print('[1/2] zoning_rates')
-    zr = parse_law(args.law)
-    cur.execute('delete from public.zoning_rates where src_month = %s', (args.month,))
-    copy_rows(cur, 'public.zoning_rates',
-              ['sgg_code','zone_cd','zone_nm','rate_kind','category','rate_pct','rate_values','ordinance','provision','enforce_dt','content','needs_review'],
-              zr, args.month)
+    if args.law:
+        print('[zoning_rates] 법령정보 파싱·적재')
+        zr = parse_law(args.law)
+        cur.execute('delete from public.zoning_rates where src_month = %s', (args.month,))
+        copy_rows(cur, 'public.zoning_rates',
+                  ['sgg_code','zone_cd','zone_nm','rate_kind','category','rate_pct','rate_values','ordinance','provision','enforce_dt','content','needs_review'],
+                  zr, args.month)
+    else:
+        print('[zoning_rates] --law 미지정 — 건너뜀 (기존 데이터 유지)')
 
-    print('[2/2] permitted_uses (약 330만 행)')
-    cur.execute('delete from public.permitted_uses where src_month = %s', (args.month,))
-    copy_rows(cur, 'public.permitted_uses',
-              ['sgg_code','sgg_name','zone_nm','law_name','land_use','decision','condition_note','is_ordinance'],
-              parse_act(args.act), args.month)
+    if args.act:
+        print('[permitted_uses] 행위제한정보 파싱·적재 (약 330만 행)')
+        cur.execute('delete from public.permitted_uses where src_month = %s', (args.month,))
+        copy_rows(cur, 'public.permitted_uses',
+                  ['sgg_code','sgg_name','zone_nm','law_name','land_use','decision','condition_note','is_ordinance'],
+                  parse_act(args.act), args.month)
+    else:
+        print('[permitted_uses] --act 미지정 — 건너뜀 (기존 데이터 유지)')
 
     conn.commit()
     cur.execute('select category, count(*) from public.zoning_rates group by 1 order by 1')
