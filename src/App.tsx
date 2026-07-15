@@ -9,7 +9,6 @@ import AuthModal from './components/AuthModal';
 import LandMap from './components/LandMap';
 
 const PURPOSES = Object.keys(PURPOSE_LABELS) as Purpose[];
-const REGULATION_OPTIONS = ['농업진흥구역','보전산지','개발제한구역','상수원보호구역','군사시설보호구역','자연보전권역','가축사육제한구역'];
 const GRADE_COLOR: Record<string,string> = {'가능성 높음':'#1a7f4b','조건부 검토':'#2d6cb8','전문가 확인 필요':'#b8862d','리스크 높음':'#c2622d','불가 가능성 높음':'#b83a3a'};
 const LEVEL_COLOR: Record<string,string> = {info:'#6b7280',caution:'#b8862d',warning:'#b83a3a'};
 
@@ -323,7 +322,6 @@ export default function App() {
   const minorItems = infraSorted.filter(x => x.rel === 0);
 
   function togglePurpose(p:Purpose){ setPurposes(prev=>prev.includes(p)?prev.filter(x=>x!==p):[...prev,p]); }
-  function toggleReg(r:string){ setRegs(p=>p.includes(r)?p.filter(x=>x!==r):[...p,r]); }
   function normalizeRegs(raw:string[]):string[]{
     const out=new Set<string>();
     for(const r of raw){ const name=r.replace(/\(.*\)$/,'').trim(); if(name==='도시지역'||name.includes('입안중'))continue; out.add(name); }
@@ -716,13 +714,6 @@ export default function App() {
           <label>직접 입력 <em className="hint">원하는 활용을 자유롭게 적으면 확인 항목을 정리해 드립니다</em></label>
           <textarea className="freetext" value={freeText} onChange={e=>setFreeText(e.target.value)}
             placeholder="예) 반려동물과 함께 살 단독주택과 작은 텃밭, 손님용 주차공간을 만들고 싶어요." rows={3} />
-        </div>
-
-        <div className="field">
-          <label>규제 {land && <em className="auto">자동</em>}</label>
-          <div className="chips">
-            {REGULATION_OPTIONS.map(r=>(<button key={r} className={`chip ${regs.includes(r)?'active warn':''}`} onClick={()=>toggleReg(r)}>{r}</button>))}
-          </div>
         </div>
 
         <div className="btn-row">
