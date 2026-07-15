@@ -23,6 +23,9 @@ select:focus,input:focus{border-color:var(--teal);box-shadow:0 0 0 3px var(--tea
 .land-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px 16px}
 .land-grid>div{display:flex;flex-direction:column;gap:2px}
 .land-grid span{font-size:13px;color:var(--muted)}.land-grid strong{font-size:15px;font-weight:700}
+.land-slope{display:flex;align-items:center;gap:10px;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
+.land-slope label{font-size:13px;color:var(--muted);white-space:nowrap}
+.land-slope input{width:90px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:15px;font-weight:700}
 .zone-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
 .zone-tag{font-size:12px;padding:4px 10px;border-radius:999px;background:var(--white);border:1px solid var(--line);color:var(--muted)}
 .zone-tag.primary{background:var(--teal);color:var(--white);border-color:var(--teal);font-weight:700}
