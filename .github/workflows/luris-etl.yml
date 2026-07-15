@@ -26,7 +26,7 @@ jobs:
           python-version: '3.12'
       - name: 의존성 설치
         run: |
-          pip install --quiet openpyxl psycopg2-binary requests
+          pip install --quiet openpyxl psycopg2-binary requests gdown
           sudo apt-get -y install p7zip-full >/dev/null 2>&1 || true
 
       - name: 적재 이력 가드 (스케줄만)
