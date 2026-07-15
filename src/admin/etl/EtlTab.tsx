@@ -45,15 +45,15 @@ const STATUS_LABEL: Record<string, string> = {
 type Phase = 'idle' | 'starting' | 'running' | 'finishing' | 'done' | 'error';
 
 interface Progress {
-  bytesDone: number;
-  bytesTotal: number;
+  sheetsDone: number;
+  sheetsTotal: number;
   rowsParsed: number;
   rowsInserted: number;
   batchesSent: number;
   batchesFailedRetries: number;
 }
 
-const ZERO: Progress = { bytesDone: 0, bytesTotal: 0, rowsParsed: 0, rowsInserted: 0, batchesSent: 0, batchesFailedRetries: 0 };
+const ZERO: Progress = { sheetsDone: 0, sheetsTotal: 0, rowsParsed: 0, rowsInserted: 0, batchesSent: 0, batchesFailedRetries: 0 };
 
 async function invokeIngest(body: Record<string, unknown>): Promise<Record<string, unknown>> {
   if (!supabase) throw new Error('Supabase 미연결');
@@ -184,7 +184,7 @@ export default function EtlTab() {
         worker.onmessage = (ev: MessageEvent<FromWorker>) => {
           const m = ev.data;
           if (m.type === 'batch') { queue.push(m.rows); pump(); }
-          else if (m.type === 'progress') setProg((p) => ({ ...p, bytesDone: m.bytesDone, bytesTotal: m.bytesTotal, rowsParsed: m.rowsParsed }));
+          else if (m.type === 'progress') setProg((p) => ({ ...p, sheetsDone: m.sheetsDone, sheetsTotal: m.sheetsTotal, rowsParsed: m.rowsParsed }));
           else if (m.type === 'done') { workerDone = true; pump(); res({ rowsParsed: m.rowsParsed, filtered: m.filtered }); }
           else if (m.type === 'error') rej(new Error(m.message));
         };
@@ -213,7 +213,7 @@ export default function EtlTab() {
   }
 
   const busy = phase === 'starting' || phase === 'running' || phase === 'finishing';
-  const pct = prog.bytesTotal > 0 ? Math.min(100, Math.round((prog.bytesDone / prog.bytesTotal) * 100)) : 0;
+  const pct = prog.sheetsTotal > 0 ? Math.min(100, Math.round((prog.sheetsDone / prog.sheetsTotal) * 100)) : 0;
   const expected = expectedEumMonth();
   const latestDone = jobs.find((j) => j.status === 'done')?.src_month ?? null;
   const stale = !latestDone || latestDone < expected;
@@ -253,7 +253,7 @@ export default function EtlTab() {
               <span className="adm-bar-n">{pct}%</span>
             </div>
             <p className="adm-muted adm-small">
-              파싱 {prog.rowsParsed.toLocaleString()}행 · 적재 {prog.rowsInserted.toLocaleString()}행 · 배치 {prog.batchesSent.toLocaleString()}건
+              {prog.sheetsTotal > 0 ? `시트 ${prog.sheetsDone}/${prog.sheetsTotal} · ` : ''}파싱 {prog.rowsParsed.toLocaleString()}행 · 적재 {prog.rowsInserted.toLocaleString()}행 · 배치 {prog.batchesSent.toLocaleString()}건
               {prog.batchesFailedRetries > 0 ? ` · 재시도 ${prog.batchesFailedRetries}` : ''}
               {' — 창을 닫지 마세요'}
             </p>

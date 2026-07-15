@@ -1,6 +1,8 @@
-// eum.go.kr 행위제한정보 xlsx 스트리밍 파서 (2-pass, sharedStrings/inlineStr 모두 대응)
-// 202만 행 규모 파일을 메모리에 전부 올리지 않고 행 단위로 흘려보낸다.
-import { Unzip, UnzipInflate } from 'fflate';
+// eum.go.kr 행위제한정보 xlsx 파서. 셀 문자열/행을 증분식으로 흘려 메모리 피크를 억제한다.
+// zip 해제는 zipStream.ts(네이티브 DecompressionStream)가 담당한다.
+import {
+  ZipEntry, readCentralDirectory, inflateEntry, inflateEntryToString, inflateEntryToBytes,
+} from './zipStream';
 
 export function unescapeXml(s: string): string {
   if (s.indexOf('&') === -1) return s;
@@ -39,9 +41,9 @@ function textOf(xml: string): string {
   return out;
 }
 
-// sharedStrings.xml 증분 파서
+// sharedStrings.xml 증분 파서 (<si> 단위로 buf를 잘라 메모리 유지)
 export class SharedStringsParser {
-  buf = '';
+  private buf = '';
   sst: string[] = [];
   push(chunk: string): void {
     this.buf += chunk;
@@ -58,7 +60,7 @@ export class SharedStringsParser {
 
 export type RowHandler = (rowIdx: number, cells: string[]) => void;
 
-// worksheet XML 증분 행 파서. onRow(rowIndex, cells[]) — cells는 열 index 기준 문자열 배열
+// worksheet XML 증분 행 파서 (<row> 단위로 buf를 잘라 메모리 유지)
 export class SheetRowParser {
   private buf = '';
   constructor(private sst: string[], private onRow: RowHandler) {}
@@ -137,88 +139,48 @@ export function parseWorkbook(workbookXml: string, relsXml: string): SheetRef[] 
   return sheets;
 }
 
-type ChunkCb = (chunk: Uint8Array, final: boolean) => void;
-
-// zip 바이트를 1MB 슬라이스로 스트리밍 순회. handler(name)가 콜백을 반환하면 해당 엔트리 청크 수신.
-// onProgress는 슬라이스마다 await — 백프레셔/진행률 지점.
-export async function streamZip(
-  data: Uint8Array,
-  handler: (name: string) => ChunkCb | null,
-  onProgress?: (consumed: number) => Promise<void> | void,
-  sliceSize = 1 << 20,
-): Promise<void> {
-  const uz = new Unzip();
-  uz.register(UnzipInflate);
-  let err: Error | null = null;
-  uz.onfile = (file) => {
-    const cb = handler(file.name);
-    if (!cb) return;
-    file.ondata = (e, chunk, final) => {
-      if (e) { err = e; return; }
-      cb(chunk, final);
-    };
-    file.start();
-  };
-  for (let off = 0; off < data.length; off += sliceSize) {
-    const end = Math.min(off + sliceSize, data.length);
-    uz.push(data.subarray(off, end), end === data.length);
-    if (err) throw err;
-    if (onProgress) await onProgress(end);
-  }
+// 업로드 파일에서 파싱 대상 xlsx의 zip 바이트를 얻는다.
+// (a) 업로드가 xlsx 자체면 그대로, (b) eum zip 컨테이너면 내부 첫 xlsx를 해제해 반환.
+export async function resolveXlsxZip(uploaded: Uint8Array): Promise<Uint8Array> {
+  const entries = readCentralDirectory(uploaded);
+  const isXlsxItself = entries.some((e) => e.name === '[Content_Types].xml');
+  if (isXlsxItself) return uploaded;
+  const inner = entries.find((e) => e.name.toLowerCase().endsWith('.xlsx'));
+  if (!inner) throw new Error('zip 안에서 xlsx 파일을 찾지 못했습니다');
+  return inflateEntryToBytes(uploaded, inner);
 }
 
-// xlsx 바이트에서 행 스트림 추출 (2-pass: 메타·sharedStrings → 시트 행)
-export async function parseXlsx(
-  xlsxBytes: Uint8Array,
-  onRow: (sheetName: string, rowIdx: number, cells: string[]) => void,
-  onProgress?: (consumed: number) => Promise<void> | void,
-): Promise<string[]> {
-  let wb = '';
-  let rels = '';
-  const sstParser = new SharedStringsParser();
-  const dWb = new TextDecoder(), dRels = new TextDecoder(), dSst = new TextDecoder();
-  await streamZip(xlsxBytes, (name) => {
-    if (name === 'xl/workbook.xml') return (c, f) => { wb += dWb.decode(c, { stream: !f }); };
-    if (name === 'xl/_rels/workbook.xml.rels') return (c, f) => { rels += dRels.decode(c, { stream: !f }); };
-    if (name === 'xl/sharedStrings.xml') return (c, f) => { sstParser.push(dSst.decode(c, { stream: !f })); };
-    return null;
-  });
+export interface XlsxMeta { entries: ZipEntry[]; byName: Record<string, ZipEntry>; sheets: SheetRef[]; sst: string[] }
+
+// xlsx zip에서 workbook·rels·sharedStrings를 먼저 읽어 시트 순서와 공유문자열을 확보한다.
+export async function readXlsxMeta(xlsxZip: Uint8Array): Promise<XlsxMeta> {
+  const entries = readCentralDirectory(xlsxZip);
+  const byName: Record<string, ZipEntry> = {};
+  for (const e of entries) byName[e.name] = e;
+  const wbE = byName['xl/workbook.xml'];
+  const relsE = byName['xl/_rels/workbook.xml.rels'];
+  if (!wbE || !relsE) throw new Error('xlsx 구조가 올바르지 않습니다 (workbook 없음)');
+  const wb = await inflateEntryToString(xlsxZip, wbE);
+  const rels = await inflateEntryToString(xlsxZip, relsE);
   const sheets = parseWorkbook(wb, rels);
   if (sheets.length === 0) throw new Error('워크북에서 시트를 찾지 못했습니다');
-  const byPath: Record<string, string> = {};
-  for (const s of sheets) byPath[s.path] = s.name;
-  await streamZip(xlsxBytes, (name) => {
-    const sheetName = byPath[name];
-    if (sheetName === undefined) return null;
+  const sstParser = new SharedStringsParser();
+  const sstE = byName['xl/sharedStrings.xml'];
+  if (sstE) {
     const dec = new TextDecoder();
-    const p = new SheetRowParser(sstParser.sst, (rowIdx, cells) => onRow(sheetName, rowIdx, cells));
-    return (c, f) => { p.push(dec.decode(c, { stream: !f })); };
-  }, onProgress);
-  return sheets.map((s) => s.name);
+    await inflateEntry(xlsxZip, sstE, (chunk, final) => sstParser.push(dec.decode(chunk, { stream: !final })));
+  }
+  return { entries, byName, sheets, sst: sstParser.sst };
 }
 
-// 업로드 파일이 (a) eum zip 컨테이너면 내부 .xlsx들을 추출, (b) xlsx 자체면 그대로 반환
-export async function extractXlsxEntries(bytes: Uint8Array): Promise<{ name: string; data: Uint8Array }[]> {
-  const names: string[] = [];
-  const collected: Record<string, Uint8Array[]> = {};
-  await streamZip(bytes, (name) => {
-    names.push(name);
-    if (name.toLowerCase().endsWith('.xlsx')) {
-      collected[name] = [];
-      return (c) => { collected[name].push(c.slice()); };
-    }
-    return null;
-  });
-  const found = Object.keys(collected);
-  if (found.length === 0) {
-    if (names.includes('[Content_Types].xml')) return [{ name: '(업로드 파일)', data: bytes }];
-    throw new Error('zip 안에서 xlsx 파일을 찾지 못했습니다');
-  }
-  return found.map((n) => {
-    const total = collected[n].reduce((a, c) => a + c.length, 0);
-    const out = new Uint8Array(total);
-    let o = 0;
-    for (const c of collected[n]) { out.set(c, o); o += c.length; }
-    return { name: n, data: out };
-  });
+// 한 시트를 스트리밍 해제하며 행을 흘린다.
+export async function streamSheetRows(
+  xlsxZip: Uint8Array, meta: XlsxMeta, sheet: SheetRef,
+  onRow: RowHandler,
+): Promise<void> {
+  const e = meta.byName[sheet.path];
+  if (!e) return;
+  const dec = new TextDecoder();
+  const parser = new SheetRowParser(meta.sst, onRow);
+  await inflateEntry(xlsxZip, e, (chunk, final) => parser.push(dec.decode(chunk, { stream: !final })));
 }
