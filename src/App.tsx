@@ -511,6 +511,22 @@ export default function App() {
     finally{ setAiLoading(false); }
   }
 
+  // 정밀분석: 5크레딧 차감 후 AI 종합분석 실행. 목적 선택 없이도 실행 가능(직접 입력·토지 데이터로 자율 분석).
+  async function runPrecision(){
+    if(!auth.userId){ setShowAuth(true); return; }
+    const paid = await auth.consumeCredit(5);
+    if(!paid.ok){
+      setAiErr(paid.reason==='insufficient'
+        ? '크레딧이 부족합니다. 정밀분석에는 5크레딧이 필요합니다.'
+        : paid.reason==='auth'
+          ? '로그인이 필요합니다.'
+          : '크레딧 확인 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.');
+      if(paid.reason==='auth') setShowAuth(true);
+      return;
+    }
+    await runAI();
+  }
+
   function renderInfraItem(g:InfraGroup, rel:number){
     const core = rel>=2;
     // 기존 주거·근생 건물이 있고 해당 항목에 오버라이드가 있으면 본문 교체
@@ -781,7 +797,15 @@ export default function App() {
               </div>
             </div>
           ))}
-          <div className="score-cta">↓ 목적을 선택하고 상세 사전검토를 실행하세요</div>
+          {!auth.userId ? (
+            <button className="run precision" onClick={()=>setShowAuth(true)}>로그인하고 정밀분석 (5크레딧)</button>
+          ) : (!auth.isAdmin && auth.credits<5) ? (
+            <button className="run precision" disabled>정밀분석 5크레딧 필요 · 크레딧 부족</button>
+          ) : (
+            <button className="run precision" onClick={runPrecision} disabled={aiLoading}>
+              {aiLoading?'분석 중…':`정밀분석 실행${auth.isAdmin?'':' (5크레딧)'}`}
+            </button>
+          )}
         </section>
       )}
 
