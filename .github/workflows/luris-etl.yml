@@ -2,17 +2,17 @@ name: LURIS ETL
 
 on:
   schedule:
-    - cron: '0 0-21/3 15-18 * *'
+    - cron: '0 3 15 * *'
   workflow_dispatch:
     inputs:
       month:
-        description: 'YYYYMM (release 모드 필수)'
+        description: 'YYYYMM (비우면 파일명/현재월)'
         required: false
       mode:
         description: '데이터 취득 방식'
         type: choice
-        options: [auto, release]
-        default: auto
+        options: [gdrive, auto, release]
+        default: gdrive
 
 jobs:
   etl:
@@ -36,8 +36,12 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: python etl/check_loaded.py
 
+      - name: 데이터 취득 (gdrive)
+        if: ${{ steps.guard.outputs.skip != 'true' && (github.event_name == 'schedule' || inputs.mode == 'gdrive') }}
+        run: python etl/fetch_gdrive.py --law-id "${{ secrets.GDRIVE_LAW_ID }}" --act-id "${{ secrets.GDRIVE_ACT_ID }}" --out data
+
       - name: 데이터 취득 (auto)
-        if: ${{ steps.guard.outputs.skip != 'true' && (github.event_name == 'schedule' || inputs.mode == 'auto') }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'auto' }}
         run: python etl/fetch_eum.py --out data
 
       - name: 데이터 취득 (release)
@@ -48,7 +52,6 @@ jobs:
           test -n "${{ inputs.month }}" || { echo 'month 필수'; exit 1; }
           mkdir -p data && cd data
           gh release download "data-${{ inputs.month }}" --dir .
-          echo '=== 자산 ===' && ls -la
           for f in *.zip.001 *.7z.001; do [ -e "$f" ] && 7z x -y "$f" >/dev/null; done
           for z in *.zip; do
             [ -e "$z" ] || continue
@@ -56,7 +59,7 @@ jobs:
             if ls "$b".z[0-9][0-9] >/dev/null 2>&1; then 7z x -y "$z" >/dev/null
             else unzip -o "$z" >/dev/null || 7z x -y "$z" >/dev/null || true; fi
           done
-          echo '=== 해제 후 ===' && ls -la
+          ls -la
 
       - name: 파일·월 확정
         id: resolve
@@ -64,7 +67,7 @@ jobs:
         run: |
           LAW=$(ls data/*법령정보*.xlsx 2>/dev/null | head -1)
           ACT=$(ls data/*행위제한정보*.xlsx 2>/dev/null | head -1)
-          test -n "$LAW$ACT" || { echo '법령정보/행위제한정보 xlsx 둘 다 없음'; ls -la data; exit 1; }
+          test -n "$LAW$ACT" || { echo 'xlsx 없음'; ls -la data; exit 1; }
           MONTH="${{ inputs.month }}"
           if [ -z "$MONTH" ]; then
             MONTH=$(ls data/*.xlsx | grep -oE '20[0-9]{6}' | head -1 | cut -c1-6)
