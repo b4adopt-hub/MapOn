@@ -7,7 +7,7 @@ import {
   fetchExperts, reviewExpert, getDocUrl,
   MemberRow, LookupRow, WatchRow, Stats, ExpertAdminRow,
 } from './adminData';
-import EtlTab, { expectedEumMonth, fetchLatestLoadedMonth } from './etl/EtlTab';
+import EtlTab, { expectedEumMonth, fetchLoadedMonths } from './etl/EtlTab';
 import './admin.css';
 
 type Tab = 'dashboard' | 'members' | 'experts' | 'lookups' | 'ordinance' | 'etl';
@@ -71,8 +71,11 @@ function AdminShell({ email, onSignOut }: { email: string | null; onSignOut: () 
   const [tab, setTab] = useState<Tab>('dashboard');
   const [etlStale, setEtlStale] = useState(false);
   useEffect(() => {
-    fetchLatestLoadedMonth()
-      .then((m) => setEtlStale(!m || m < expectedEumMonth()))
+    fetchLoadedMonths()
+      .then(({ permitted, zoning }) => {
+        const exp = expectedEumMonth();
+        setEtlStale(!permitted || permitted < exp || !zoning || zoning < exp);
+      })
       .catch(() => setEtlStale(false));
   }, [tab]);
   return (
