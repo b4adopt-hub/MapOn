@@ -184,3 +184,33 @@ export async function streamSheetRows(
   const parser = new SheetRowParser(meta.sst, onRow);
   await inflateEntry(xlsxZip, e, (chunk, final) => parser.push(dec.decode(chunk, { stream: !final })));
 }
+
+// 업로드 파일 종류. 행위제한정보는 '법령'+'조례_시도' 다중 시트,
+// 법령정보(건폐율·용적률)는 단일 시트(Sheet1) 구조로 구분된다.
+export type EumKind = 'permitted' | 'zoning';
+
+export function detectKind(meta: XlsxMeta, fileName?: string): EumKind {
+  const names = meta.sheets.map((s) => s.name);
+  const hasOrdinanceSheets = names.some((n) => n.startsWith('조례_')) || names.includes('법령');
+  // 행위제한정보: '법령' 시트 + '조례_*' 시트가 함께 존재
+  if (names.includes('법령') && names.some((n) => n.startsWith('조례_'))) return 'permitted';
+  // 파일명 힌트
+  const fn = (fileName ?? '').replace(/\s/g, '');
+  if (fn.includes('행위제한')) return 'permitted';
+  if (fn.includes('법령정보')) return 'zoning';
+  // 단일 시트면 법령정보(zoning)로 간주
+  if (!hasOrdinanceSheets && meta.sheets.length === 1) return 'zoning';
+  return 'permitted';
+}
+
+// 법령정보 시트 전량을 배열의 배열로 수집한다 (헤더 제외). 파일이 작아 메모리 처리 가능.
+export async function collectLawRows(xlsxZip: Uint8Array, meta: XlsxMeta): Promise<string[][]> {
+  const out: string[][] = [];
+  for (const sheet of meta.sheets) {
+    await streamSheetRows(xlsxZip, meta, sheet, (rowIdx, cells) => {
+      if (rowIdx === 1) return; // 헤더
+      out.push(cells);
+    });
+  }
+  return out;
+}
