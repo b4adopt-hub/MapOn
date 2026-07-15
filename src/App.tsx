@@ -1,11 +1,17 @@
 import { useState, useMemo } from 'react';
-import { diagnose, LandInput } from './engine/diagnose';
+import { diagnose, LandInput, DiagnosisResult } from './engine/diagnose';
 import { Purpose, PURPOSE_LABELS } from './engine/purposes';
 import { scoreLand, CATEGORY_ORDER, CATEGORY_LABELS, ScoreCategory } from './engine/landScore';
+import { fetchOrdinance, OrdinanceResult } from './engine/ordinance';
+import { applyOrdinance } from './engine/gradeAdjust';
 import { supabase, supabaseReady } from './lib/supabase';
 import { useAuth } from './lib/useAuth';
 import AuthModal from './components/AuthModal';
 import LandMap from './components/LandMap';
+
+const PURPOSES = Object.keys(PURPOSE_LABELS) as Purpose[];
+const GRADE_COLOR: Record<string,string> = {'가능성 높음':'#1a7f4b','조건부 검토':'#2d6cb8','전문가 확인 필요':'#b8862d','리스크 높음':'#c2622d','불가 가능성 높음':'#b83a3a'};
+const LEVEL_COLOR: Record<string,string> = {info:'#6b7280',caution:'#b8862d',warning:'#b83a3a'};
 
 // 강화 면책 문구 — 결과 화면과 푸터에 반복 표시(법적 방어)
 const DISCLAIMER_FULL = '본 서비스는 공공데이터와 사용자가 입력한 정보를 바탕으로 한 사전 참고자료입니다. 건축 가능 여부, 개발행위허가 가능 여부, 도로 인정 여부, 권리·점유 관계, 인허가 가능성, 가격 적정성, 입찰·매수 판단을 확정하거나 보장하지 않습니다. 최종 판단은 관할 지자체, 법원 기록, 공부서류, 현장조사 및 관련 전문가 검토를 통해 진행해야 합니다.';
@@ -290,6 +296,10 @@ export default function App() {
   const [purposes] = useState<Purpose[]>(['house']);
   const [freeText, setFreeText] = useState('');
 
+  // 룰엔진 사전검토 결과 + 조례
+  const [results, setResults] = useState<DiagnosisResult[]>([]);
+  const [ordinance, setOrdinance] = useState<OrdinanceResult|null>(null);
+
   // AI 분석
   const [aiLoading, setAiLoading] = useState(false);
   const [aiText, setAiText] = useState<string|null>(null);
@@ -351,7 +361,7 @@ export default function App() {
     if(!address.trim())return;
     // 접근 제어: 비로그인은 조회 불가(로그인 유도). 로그인 사용자는 조회 시 1크레딧 차감.
     if(!auth.userId){ setShowAuth(true); return; }
-    setLooking(true); setLookupErr(null); setAiText(null); setAiErr(null);
+    setLooking(true); setLookupErr(null); setResults([]); setOrdinance(null); setAiText(null); setAiErr(null);
     setBuilding(null); setBldChecked(false); setCharact(null);
     setLand(null);
     // 크레딧 차감(원자적, 서버). 부족하면 조회 중단하고 안내.
@@ -484,7 +494,24 @@ export default function App() {
     finally{ setAiLoading(false); }
   }
 
-  // 정밀분석: 5크레딧 차감 후 AI 종합분석 실행. 목적 선택 없이도 실행 가능(직접 입력·토지 데이터로 자율 분석).
+  // 룰엔진 사전검토: 전체 활용 목적으로 등급을 산출하고, 지자체 조례를 조회해 반영.
+  // (목적 선택 UI가 없으므로 이 땅으로 가능한 활용 전반을 객관 표로 보여준다.)
+  function runRuleCheck(){
+    const input=buildInput();
+    const list = PURPOSES.map(p=>diagnose(input,p));
+    setResults(list);
+    setOrdinance(null);
+    fetchOrdinance(land?.pnu, land?.primaryUseZone, PURPOSES, slope?Number(slope):null)
+      .then(ord=>{
+        setOrdinance(ord);
+        if(ord && ord.uses.length>0){
+          setResults(prev=>prev.map(r=>applyOrdinance(r, ord)));
+        }
+      })
+      .catch(()=>setOrdinance(null));
+  }
+
+  // 정밀분석: 5크레딧 차감 후 (1)객관적 사전검토(등급·위험·조례) + (2)AI 종합분석을 함께 실행.
   async function runPrecision(){
     if(!auth.userId){ setShowAuth(true); return; }
     const paid = await auth.consumeCredit(5);
@@ -497,7 +524,8 @@ export default function App() {
       if(paid.reason==='auth') setShowAuth(true);
       return;
     }
-    await runAI();
+    runRuleCheck();      // 객관적 사전검토(등급·위험·조례) 먼저
+    await runAI();        // 이어 AI 종합분석
   }
 
   function renderInfraItem(g:InfraGroup, rel:number){
@@ -514,7 +542,7 @@ export default function App() {
             {core && <span className="infra-star">●</span>}
             {g.title}
             <span className={`infra-badge sm ${GRADE_META[g.grade].cls}`}>{g.grade}</span>
-            {core && <span className="infra-rel-tag core">이 목적에 핵심</span>}
+            {core && <span className="infra-rel-tag core">이 활용에 핵심</span>}
             {rel===0 && <span className="infra-rel-tag minor">영향 적음</span>}
             {ov && <span className="infra-rel-tag exist">기존 시설</span>}
           </span>
@@ -716,10 +744,10 @@ export default function App() {
           <div className="infra-card">
             <div className="infra-head">
               <span className="infra-title">기반시설 · 사용성 확인 항목</span>
-              <span className="infra-sub">{purposes.length?`${purposes.map(p=>PURPOSE_LABELS[p]).join('·')} 기준`:'10개 항목'}</span>
+              <span className="infra-sub">10개 항목</span>
             </div>
             <p className="infra-lead">
-              선택한 목적에 따라 <b>핵심 항목을 위로</b> 정렬했습니다. 공공데이터로 알 수 있는 것과 기관·현장 확인이 필요한 것을 등급으로 구분합니다.
+              토지 활용에 앞서 확인해야 할 기반시설을 <b>위험 순으로</b> 정렬했습니다. 공공데이터로 알 수 있는 것과 기관·현장 확인이 필요한 것을 등급으로 구분합니다.
               {hasResidentialBuilding
                 ? ' 이 토지에는 이미 사용승인된 건물이 있어 도로·전기·상수도·오수가 이미 해결돼 있을 가능성이 높습니다. 해당 항목은 신규 설치가 아닌 기존 시설 상태·승계 확인으로 안내합니다.'
                 : infraOutlying(land.primaryUseZone)
@@ -776,7 +804,7 @@ export default function App() {
       {land && (
         <section className="form">
           <div className="field">
-            <label>정밀분석 <em className="hint">원하는 활용·궁금한 점을 자유롭게 적으면 AI가 토지 데이터와 함께 종합 분석합니다</em></label>
+            <label>정밀분석 <em className="hint">원하는 활용·궁금한 점을 자유롭게 적으면, 객관 사전검토(용도별 등급·조례)와 AI 종합분석을 함께 보여드립니다</em></label>
             <textarea className="freetext" value={freeText} onChange={e=>setFreeText(e.target.value)}
               placeholder="예) 반려동물과 함께 살 단독주택과 작은 텃밭, 손님용 주차공간을 만들고 싶어요. / 창고로 임대 놓으면 어떨지 궁금해요." rows={4} />
           </div>
@@ -793,9 +821,57 @@ export default function App() {
         </section>
       )}
 
+      {results.length>0 && (
+        <section className="result">
+          <h3 className="result-title">사전검토 결과 <span className="result-sub">— 이 토지로 가능한 활용별 등급(객관 판정)</span></h3>
+          {ordinance && ordinance.items.length>0 && (
+            <div className="ordinance">
+              <h3 className="ord-title">지자체 조례 확인 항목{ordinance.sggName?` · ${ordinance.sggName}`:''}</h3>
+              <p className="ord-lead">용도지역·규제는 자동 조회됐지만, 건축물 높이·건폐율 특례·가축사육 거리 등 세부 기준은 지자체 조례로 정해집니다. 아래 항목을 조례에서 확인하세요.</p>
+              {ordinance.items.map(it=>(
+                <div key={it.key} className={`ord-item ord-${it.level}`}>
+                  <div className="ord-item-label">{it.label}</div>
+                  <div className="ord-item-note">{it.note}</div>
+                  {it.source && <div className="ord-item-src">근거: {it.source}</div>}
+                </div>
+              ))}
+              {ordinance.elisUrl && (
+                <a className="ord-elis" href={ordinance.elisUrl} target="_blank" rel="noopener noreferrer">
+                  {ordinance.sggName?`${ordinance.sggName} 자치법규(ELIS) 열기`:'자치법규(ELIS) 열기'} ↗
+                </a>
+              )}
+            </div>
+          )}
+          {results.map((result)=>(
+            <div key={result.purpose} className="result-block">
+              <div className="grade-card">
+                <div className="grade-label">{result.purposeLabel}</div>
+                <div className="grade" style={{color:GRADE_COLOR[result.gradeLabel]}}>{result.gradeLabel}</div>
+                <div className="grade-desc">{result.gradeDescription}</div>
+                {(result.gradeLabel==='리스크 높음'||result.gradeLabel==='불가 가능성 높음') && (
+                  <div className="grade-caveat">'불가능' 판정이 아니라, 추가 확인 없이 진행하면 손실 가능성이 크다는 의미입니다.</div>
+                )}
+                {result.zone && (<div className="zone-meta">{result.zone.name} · 건폐율 {ordinance?.rates?.bcr?.pct ?? result.zone.bcrMax}%(땅의 {ordinance?.rates?.bcr?.pct ?? result.zone.bcrMax}%까지 바닥 건축) · 용적률 {ordinance?.rates?.far?.pct ?? result.zone.farMax}%(층수 여유){ordinance?.rates?' · 지자체 조례 기준':' · 법령 일반값'}</div>)}
+              </div>
+              <div className="risks">
+                {result.riskItems.map(ri=>(
+                  <div key={ri.key} className="risk">
+                    <span className="dot" style={{background:LEVEL_COLOR[ri.level]}} />
+                    <div><div className="risk-label">{ri.label}</div><div className="risk-note">{ri.note}</div></div>
+                  </div>
+                ))}
+              </div>
+              <div className="recs">
+                <div className="chips">{result.recommendations.map(r=>(<span key={r} className="chip static">{r}</span>))}</div>
+              </div>
+            </div>
+          ))}
+        </section>
+      )}
+
       {(aiText || aiErr) && (
         <section className="result ai-result">
-          <h3 className="ai-title">정밀분석 결과</h3>
+          <h3 className="ai-title">AI 종합 분석</h3>
           {aiErr && <div className="lookup-err">{aiErr}</div>}
           {aiText && <div className="ai-text">{aiText}</div>}
           <p className="disclaimer">{DISCLAIMER_FULL}</p>
