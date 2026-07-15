@@ -9,8 +9,6 @@ import AuthModal from './components/AuthModal';
 import LandMap from './components/LandMap';
 
 const PURPOSES = Object.keys(PURPOSE_LABELS) as Purpose[];
-const ZONE_OPTIONS = ['계획관리지역','생산관리지역','보전관리지역','농림지역','자연환경보전지역','제1종일반주거지역','자연녹지지역','생산녹지지역','보전녹지지역'];
-const JIMOK_OPTIONS = ['대','전','답','임야','잡종지','과수원'];
 const REGULATION_OPTIONS = ['농업진흥구역','보전산지','개발제한구역','상수원보호구역','군사시설보호구역','자연보전권역','가축사육제한구역'];
 const GRADE_COLOR: Record<string,string> = {'가능성 높음':'#1a7f4b','조건부 검토':'#2d6cb8','전문가 확인 필요':'#b8862d','리스크 높음':'#c2622d','불가 가능성 높음':'#b83a3a'};
 const LEVEL_COLOR: Record<string,string> = {info:'#6b7280',caution:'#b8862d',warning:'#b83a3a'};
@@ -278,7 +276,7 @@ function infraRelevance(key:string, purposes:Purpose[]):number{
 export default function App() {
   const auth = useAuth();
   const [showAuth, setShowAuth] = useState(false);
-  const [address, setAddress] = useState('경기도 가평군 상면 비룡로 2268-38');
+  const [address, setAddress] = useState('');
   const [looking, setLooking] = useState(false);
   const [lookupErr, setLookupErr] = useState<string|null>(null);
   const [land, setLand] = useState<LandLookup|null>(null);
@@ -568,6 +566,10 @@ export default function App() {
               <div><span>공시지가</span><strong>{land.officialPrice!=null?`${land.officialPrice.toLocaleString()}원/㎡`:'-'}</strong></div>
               <div><span>대표 용도지역</span><strong>{land.primaryUseZone??'-'}</strong></div>
             </div>
+            <div className="land-slope">
+              <label>평균 경사 (%)</label>
+              <input value={slope} onChange={e=>setSlope(e.target.value)} inputMode="numeric" />
+            </div>
             {charact && (charact.roadSide||charact.topographyHeight||charact.topographyShape) && (
               <div className="charact-row">
                 {charact.roadSide && (
@@ -696,31 +698,6 @@ export default function App() {
       </section>
 
       <section className="form">
-        <div className="field">
-          <label>용도지역 {land && <em className="auto">자동</em>}</label>
-          <select value={useZoneRaw} onChange={e=>setUseZone(e.target.value)}>
-            {ZONE_OPTIONS.map(z=>(<option key={z} value={z}>{z}</option>))}
-            {!ZONE_OPTIONS.includes(useZoneRaw) && <option value={useZoneRaw}>{useZoneRaw}</option>}
-          </select>
-        </div>
-        <div className="row">
-          <div className="field">
-            <label>지목 {land && <em className="auto">자동</em>}</label>
-            <select value={jimok} onChange={e=>setJimok(e.target.value)}>
-              {JIMOK_OPTIONS.map(j=>(<option key={j} value={j}>{j}</option>))}
-              {!JIMOK_OPTIONS.includes(jimok) && <option value={jimok}>{jimok}</option>}
-            </select>
-          </div>
-          <div className="field">
-            <label>면적 (㎡) {land && <em className="auto">자동</em>}</label>
-            <input value={areaSqm} onChange={e=>setArea(e.target.value)} inputMode="numeric" />
-          </div>
-          <div className="field">
-            <label>평균 경사 (%)</label>
-            <input value={slope} onChange={e=>setSlope(e.target.value)} inputMode="numeric" />
-          </div>
-        </div>
-
         <div className="field">
           <label>목적 <em className="hint">복수 선택 가능</em></label>
           <div className="chips">
