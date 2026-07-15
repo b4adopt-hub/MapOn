@@ -70,15 +70,17 @@ jobs:
             MONTH=$(ls data/*.xlsx | grep -oE '20[0-9]{6}' | head -1 | cut -c1-6)
           fi
           test -n "$MONTH" || MONTH=$(date +%Y%m)
-          ARGS=""
-          [ -n "$LAW" ] && ARGS="$ARGS --law \"$LAW\""
-          [ -n "$ACT" ] && ARGS="$ARGS --act \"$ACT\""
-          echo "args=$ARGS" >> "$GITHUB_OUTPUT"
-          echo "month=$MONTH" >> "$GITHUB_OUTPUT"
+          echo "LAW=$LAW" >> "$GITHUB_ENV"
+          echo "ACT=$ACT" >> "$GITHUB_ENV"
+          echo "MONTH=$MONTH" >> "$GITHUB_ENV"
           echo "적재 대상: law=$LAW act=$ACT month=$MONTH"
 
       - name: Supabase 적재
         if: ${{ steps.guard.outputs.skip != 'true' }}
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: eval python etl/load_luris.py ${{ steps.resolve.outputs.args }} --month "${{ steps.resolve.outputs.month }}"
+        run: |
+          ARGS=(--month "$MONTH")
+          [ -n "$LAW" ] && ARGS+=(--law "$LAW")
+          [ -n "$ACT" ] && ARGS+=(--act "$ACT")
+          python etl/load_luris.py "${ARGS[@]}"
