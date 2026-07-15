@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { diagnose, LandInput, DiagnosisResult } from './engine/diagnose';
-import { Purpose, PURPOSE_LABELS } from './engine/purposes';
+import { Purpose, PURPOSE_LABELS, GRADE_RANK } from './engine/purposes';
 import { fetchOrdinance, OrdinanceResult } from './engine/ordinance';
 import { applyOrdinance } from './engine/gradeAdjust';
 import { supabase, supabaseReady } from './lib/supabase';
@@ -321,6 +321,33 @@ export default function App() {
   const coreItems = infraSorted.filter(x => x.rel >= 1);
   const minorItems = infraSorted.filter(x => x.rel === 0);
 
+  // 목적 입력 전 미리보기: 조회된 토지를 전체 목적으로 진단해 목적별 점수(0~100) 산출.
+  // 점수 = (최악등급rank 4 - 해당 등급rank) / 4 * 100  (높을수록 유리).
+  // 이 값들의 평균이 "이 땅의 종합 활용 점수".
+  const purposeScores = useMemo(() => {
+    if (!land) return null;
+    const base: LandInput = {
+      pnu: land.pnu ?? undefined,
+      address: land.address ?? address,
+      useZoneRaw: land.primaryUseZone ?? useZoneRaw,
+      jimok: land.jimok ?? jimok,
+      areaSqm: land.areaSqm ?? (areaSqm ? Number(areaSqm) : null),
+      slopePercent: slope ? Number(slope) : null,
+      regulations: regs.length ? regs : null,
+      roadAccess: land.roadAccess ?? null,
+      roadSideName: charact?.roadSide ?? null,
+      roadSideLevel: charact?.roadLevel ?? null,
+      topographyName: charact?.topographyHeight ?? null,
+    };
+    const rows = PURPOSES.map(p => {
+      const d = diagnose(base, p);
+      const score = Math.round(((4 - GRADE_RANK[d.grade]) / 4) * 100);
+      return { purpose: p, label: PURPOSE_LABELS[p], score, gradeLabel: d.gradeLabel };
+    }).sort((a, b) => b.score - a.score);
+    const avg = Math.round(rows.reduce((s, r) => s + r.score, 0) / rows.length);
+    return { rows, avg };
+  }, [land, charact, regs, slope, address, useZoneRaw, jimok, areaSqm]);
+
   function togglePurpose(p:Purpose){ setPurposes(prev=>prev.includes(p)?prev.filter(x=>x!==p):[...prev,p]); }
   function normalizeRegs(raw:string[]):string[]{
     const out=new Set<string>();
@@ -330,8 +357,23 @@ export default function App() {
 
   async function lookup(){
     if(!address.trim())return;
+    // 접근 제어: 비로그인은 조회 불가(로그인 유도). 로그인 사용자는 조회 시 1크레딧 차감.
+    if(!auth.userId){ setShowAuth(true); return; }
     setLooking(true); setLookupErr(null); setResults([]); setAiText(null); setAiErr(null);
     setBuilding(null); setBldChecked(false); setCharact(null);
+    setLand(null);
+    // 크레딧 차감(원자적, 서버). 부족하면 조회 중단하고 안내.
+    const paid = await auth.consumeCredit();
+    if(!paid.ok){
+      setLooking(false);
+      setLookupErr(paid.reason==='insufficient'
+        ? '크레딧이 부족합니다. 상세 조회는 크레딧이 필요합니다.'
+        : paid.reason==='auth'
+          ? '로그인이 필요합니다.'
+          : '크레딧 확인 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.');
+      if(paid.reason==='auth') setShowAuth(true);
+      return;
+    }
     // 면·리·동 지번 형식(…리/…동 + 지번, '산 00' 포함)이면 지번(PARCEL)으로 조회.
     // 그 외(도로명 등)는 지정하지 않고 서버 기본값(ROAD→PARCEL 폴백)에 맡긴다.
     const addr = address.trim();
@@ -522,6 +564,7 @@ export default function App() {
           <span className="mp-user">
             {auth.displayName ?? auth.email}님
             {auth.isExpert && <span className="mp-user-tag">{auth.expertStatus === 'approved' ? '전문가' : '전문가 심사중'}</span>}
+            <span className="mp-credit">크레딧 {auth.isAdmin ? '∞' : auth.credits}</span>
             <button className="mp-link-btn" onClick={auth.signOut}>로그아웃</button>
           </span>
         ) : (
@@ -551,7 +594,16 @@ export default function App() {
           <input className="search-input" value={address} onChange={e=>setAddress(e.target.value)}
             placeholder="예) 가나면 다라리 100-1  (도로명 또는 면·리 지번 모두 가능)"
             onKeyDown={e=>{if(e.key==='Enter')lookup();}} />
-          <button className="run lookup-btn-full" onClick={lookup} disabled={looking}>{looking?'조회 중…':'토지 조회'}</button>
+          {!auth.userId ? (
+            <button className="run lookup-btn-full" onClick={()=>setShowAuth(true)}>로그인하고 조회하기</button>
+          ) : (!auth.isAdmin && auth.credits<=0) ? (
+            <button className="run lookup-btn-full" disabled>크레딧 소진 · 추가 크레딧 필요</button>
+          ) : (
+            <button className="run lookup-btn-full" onClick={lookup} disabled={looking}>
+              {looking?'조회 중…':`토지 조회${auth.isAdmin?'':' (1크레딧)'}`}
+            </button>
+          )}
+          {!auth.userId && <div className="lookup-hint">로그인하면 1크레딧으로 토지 기본 정보와 활용 점수를 확인할 수 있습니다.</div>}
           {lookupErr && <div className="lookup-err">{lookupErr}</div>}
         </div>
 
@@ -701,6 +753,30 @@ export default function App() {
           </div>
         )}
       </section>
+
+      {land && purposeScores && (
+        <section className="form score-card">
+          <div className="score-head">
+            <span className="score-title">이 토지의 활용 점수</span>
+            <span className="score-avg" style={{color: purposeScores.avg>=70?'#1a7f4b':purposeScores.avg>=45?'#b8862d':'#c2622d'}}>
+              종합 {purposeScores.avg}점
+            </span>
+          </div>
+          <p className="score-lead">조회한 토지를 모든 활용 목적으로 사전검토한 <b>목적별 점수</b>입니다. 점수가 높을수록 그 용도로 쓰기에 유리합니다. 아래에서 <b>원하는 목적을 선택하면</b> 등급·위험 항목·조례까지 상세 검토가 열립니다.</p>
+          <div className="score-bars">
+            {purposeScores.rows.map(r=>(
+              <div key={r.purpose} className="score-row">
+                <span className="score-label">{r.label}</span>
+                <div className="score-track">
+                  <div className="score-fill" style={{width:`${r.score}%`, background: r.score>=70?'#1a7f4b':r.score>=45?'#b8862d':'#c2622d'}} />
+                </div>
+                <span className="score-num">{r.score}</span>
+              </div>
+            ))}
+          </div>
+          <div className="score-cta">↓ 목적을 선택하고 상세 사전검토를 실행하세요</div>
+        </section>
+      )}
 
       <section className="form">
         <div className="field">
