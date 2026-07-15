@@ -334,14 +334,21 @@ export default function App() {
     if(!address.trim())return;
     setLooking(true); setLookupErr(null); setResults([]); setAiText(null); setAiErr(null);
     setBuilding(null); setBldChecked(false); setCharact(null);
+    // 면·리·동 지번 형식(…리/…동 + 지번, '산 00' 포함)이면 지번(PARCEL)으로 조회.
+    // 그 외(도로명 등)는 지정하지 않고 서버 기본값(ROAD→PARCEL 폴백)에 맡긴다.
+    const addr = address.trim();
+    const isParcel = /(리|동|가)\s*(산\s*)?\d+(-\d+)?\s*$/.test(addr) || /\s산\s*\d/.test(addr);
+    const reqBody:{address:string; addressType?:string} = isParcel
+      ? { address: addr, addressType: 'PARCEL' }
+      : { address: addr };
     try{
       let data:LandLookup;
       if(supabaseReady && supabase){
-        const res=await supabase.functions.invoke('land-lookup',{body:{address:address.trim()}});
+        const res=await supabase.functions.invoke('land-lookup',{body:reqBody});
         if(res.error)throw new Error(res.error.message);
         data=res.data as LandLookup;
       }else{
-        const r=await fetch(`${FN_BASE}/land-lookup`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({address:address.trim()})});
+        const r=await fetch(`${FN_BASE}/land-lookup`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(reqBody)});
         data=await r.json() as LandLookup;
       }
       if(data.error){ setLookupErr(data.message||data.error); setLand(null); return; }
@@ -544,7 +551,7 @@ export default function App() {
         <div className="field">
           <label>토지 주소 (도로명 또는 지번)</label>
           <input className="search-input" value={address} onChange={e=>setAddress(e.target.value)}
-            placeholder="예) 가평군 상면 비룡로 2268-38  또는  가평군 상면 연하리 189"
+            placeholder="예) 가나면 다라리 100-1  (도로명 또는 면·리 지번 모두 가능)"
             onKeyDown={e=>{if(e.key==='Enter')lookup();}} />
           <button className="run lookup-btn-full" onClick={lookup} disabled={looking}>{looking?'조회 중…':'토지 조회'}</button>
           {lookupErr && <div className="lookup-err">{lookupErr}</div>}
