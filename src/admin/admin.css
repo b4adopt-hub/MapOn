@@ -53,38 +53,51 @@
 /* 박스/그리드 */
 .adm-grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
 @media(max-width:720px){.adm-grid2{grid-template-columns:1fr}}
-.adm-box{background:#fff;border:1px solid var(--a-line);border-radius:14px;padding:18px}
-.adm-box h3{font-size:14px;margin:0 0 14px}
+.adm-box{background:#fff;border:1px solid var(--a-line);border-radius:14px;padding:18px;margin-bottom:16px}
+.adm-box h3{margin:0 0 12px;font-size:15px}
 
 /* 막대 */
-.adm-bar{display:flex;align-items:center;gap:10px;margin-bottom:8px;font-size:13px}
-.adm-bar-l{flex:0 0 110px;color:var(--a-ink)}
-.adm-bar-track{flex:1;height:8px;background:#eef2f4;border-radius:999px;overflow:hidden}
-.adm-bar-fill{display:block;height:100%;background:var(--a-teal);border-radius:999px}
-.adm-bar-n{flex:0 0 36px;text-align:right;color:var(--a-muted)}
+.adm-bar{display:flex;align-items:center;gap:10px;margin:6px 0}
+.adm-bar-l{flex:0 0 110px;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.adm-bar-track{flex:1;height:8px;background:var(--a-bg);border-radius:4px;overflow:hidden}
+.adm-bar-fill{display:block;height:100%;background:var(--a-teal);border-radius:4px}
+.adm-bar-n{flex:0 0 40px;font-size:12.5px;text-align:right;color:var(--a-muted)}
 
-/* 스파크라인 */
+/* 스파크(일별) */
 .adm-spark{display:flex;align-items:flex-end;gap:3px;height:80px}
 .adm-spark-bar{flex:1;background:var(--a-teal);border-radius:2px 2px 0 0;min-height:2px;opacity:.85}
 
 /* 테이블 */
-.adm-table{width:100%;border-collapse:collapse;font-size:13px;background:#fff;border:1px solid var(--a-line);border-radius:12px;overflow:hidden}
-.adm-table th{text-align:left;padding:10px 12px;background:#f0f3f5;font-weight:700;color:var(--a-muted);font-size:12px;white-space:nowrap}
-.adm-table td{padding:9px 12px;border-top:1px solid var(--a-line)}
-.adm-table select{padding:4px 6px;border:1px solid var(--a-line);border-radius:6px;font-size:12.5px}
+.adm-table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--a-line);border-radius:12px;overflow:hidden;font-size:13.5px}
+.adm-table th{background:#f8fafb;text-align:left;padding:11px 12px;font-size:12.5px;color:var(--a-muted);border-bottom:1px solid var(--a-line)}
+.adm-table td{padding:10px 12px;border-bottom:1px solid #eef1f4;vertical-align:middle}
+.adm-table tr:last-child td{border-bottom:none}
+.adm-table select{padding:5px 8px;border:1px solid var(--a-line);border-radius:8px;font-size:13px;background:#fff}
+.adm-row-alert{background:#fff8f6}
 .adm-nowrap{white-space:nowrap}
-.adm-row-alert{background:#fdf4f4}
-.adm-badge{font-size:11.5px;font-weight:700;padding:3px 8px;border-radius:999px}
-.adm-badge.alert{background:#fdecec;color:var(--a-alert)}
-.adm-badge.ok{background:#eaf6ef;color:var(--a-teal)}
 
-/* 전문가 상세 모달 */
-.adm-modal-bg{position:fixed;inset:0;background:rgba(20,36,31,.5);display:flex;align-items:center;justify-content:center;z-index:1000;padding:20px}
-.adm-modal{background:#fff;border-radius:14px;padding:24px;width:460px;max-width:100%;max-height:85vh;overflow-y:auto}
-.adm-modal h3{margin:0 0 16px;font-size:17px}
-.adm-kv{display:flex;gap:10px;padding:7px 0;border-bottom:1px solid var(--a-line);font-size:13px}
-.adm-kv span{flex:0 0 100px;color:var(--a-muted)}
-.adm-kv b{font-weight:600}
-.adm-doc-row{display:flex;gap:8px;margin-top:14px}
+/* 배지 */
+.adm-badge{display:inline-block;padding:3px 9px;border-radius:99px;font-size:12px;font-weight:700;background:#eef1f4;color:var(--a-muted)}
+.adm-badge.ok{background:#e7f3ee;color:var(--a-teal)}
+.adm-badge.alert{background:#fdecec;color:var(--a-alert)}
+
+/* 모달 */
+.adm-modal-bg{position:fixed;inset:0;background:rgba(20,30,26,.45);display:flex;align-items:center;justify-content:center;z-index:50;padding:20px}
+.adm-modal{background:#fff;border-radius:16px;padding:24px;width:min(520px,100%);max-height:85vh;overflow-y:auto}
+.adm-modal h3{margin:0 0 14px}
+.adm-kv{display:flex;gap:10px;padding:6px 0;border-bottom:1px solid #f0f3f5;font-size:13.5px}
+.adm-kv span{flex:0 0 110px;color:var(--a-muted)}
+.adm-kv b{font-weight:600;word-break:break-all}
+.adm-doc-row{display:flex;gap:8px;margin-top:12px}
 .adm-modal-actions{display:flex;gap:8px;margin-top:18px;flex-wrap:wrap}
-.adm-modal-actions .adm-btn{flex:1;min-width:80px}
+
+/* 데이터 적재 탭 신규파일 알림 배지 */
+.adm-nav-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: #e5484d;
+  vertical-align: middle;
+}

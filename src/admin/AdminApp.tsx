@@ -7,9 +7,10 @@ import {
   fetchExperts, reviewExpert, getDocUrl,
   MemberRow, LookupRow, WatchRow, Stats, ExpertAdminRow,
 } from './adminData';
+import EtlTab, { expectedEumMonth, fetchLatestLoadedMonth } from './etl/EtlTab';
 import './admin.css';
 
-type Tab = 'dashboard' | 'members' | 'experts' | 'lookups' | 'ordinance';
+type Tab = 'dashboard' | 'members' | 'experts' | 'lookups' | 'ordinance' | 'etl';
 
 export default function AdminApp() {
   const auth = useAuth();
@@ -68,6 +69,12 @@ function LoginGate({ signIn }: { signIn: (e: string, p: string) => Promise<strin
 
 function AdminShell({ email, onSignOut }: { email: string | null; onSignOut: () => void }) {
   const [tab, setTab] = useState<Tab>('dashboard');
+  const [etlStale, setEtlStale] = useState(false);
+  useEffect(() => {
+    fetchLatestLoadedMonth()
+      .then((m) => setEtlStale(!m || m < expectedEumMonth()))
+      .catch(() => setEtlStale(false));
+  }, [tab]);
   return (
     <div className="adm-app">
       <aside className="adm-nav">
@@ -78,6 +85,9 @@ function AdminShell({ email, onSignOut }: { email: string | null; onSignOut: () 
           <button className={tab === 'experts' ? 'on' : ''} onClick={() => setTab('experts')}>전문가 승인</button>
           <button className={tab === 'lookups' ? 'on' : ''} onClick={() => setTab('lookups')}>매물분석 기록</button>
           <button className={tab === 'ordinance' ? 'on' : ''} onClick={() => setTab('ordinance')}>조례 변경</button>
+          <button className={tab === 'etl' ? 'on' : ''} onClick={() => setTab('etl')}>
+            데이터 적재{etlStale && <span className="adm-nav-dot" title="신규 월 파일 적재 필요" />}
+          </button>
         </nav>
         <div className="adm-nav-foot">
           <div className="adm-email">{email}</div>
@@ -90,6 +100,7 @@ function AdminShell({ email, onSignOut }: { email: string | null; onSignOut: () 
         {tab === 'experts' && <ExpertsTab />}
         {tab === 'lookups' && <LookupsTab />}
         {tab === 'ordinance' && <OrdinanceTab />}
+        {tab === 'etl' && <EtlTab />}
       </main>
     </div>
   );
