@@ -47,6 +47,8 @@ export interface LandInput {
   roadSideLevel?: 'good' | 'normal' | 'weak' | 'blind' | 'unknown' | null;
   /** 지형고저(공부값) — 평지/완경사/급경사 등 */
   topographyName?: string | null;
+  /** 토지형상(공부값) — 정방형/장방형/부정형/자루형 등 */
+  topographyShape?: string | null;
 }
 
 /** 위험 항목 1건 */
