@@ -39,6 +39,16 @@ select:focus,input:focus{border-color:var(--teal);box-shadow:0 0 0 3px var(--tea
 .score-caps{margin:0 0 14px;padding:10px 12px;background:#fdecec;border:1px solid #f3c6c6;border-radius:10px}
 .score-caps-title{font-size:12.5px;font-weight:800;color:#b83a3a;margin-bottom:6px}
 .score-cap-item{font-size:13px;color:#8a2f2f;line-height:1.55}
+.hazard-box{margin:0 0 14px;padding:11px 12px;background:#fbf6ef;border:1px solid #e8d8c0;border-radius:10px}
+.hazard-box-title{font-size:13px;font-weight:800;color:#8a6a2f;margin-bottom:8px;display:flex;align-items:baseline;gap:8px}
+.hazard-box-sub{font-size:11.5px;font-weight:600;color:#a98d5f}
+.hazard-none{font-size:13px;color:#5c7a5c;line-height:1.5}
+.hazard-item{display:flex;align-items:baseline;gap:10px;padding:5px 0;border-bottom:1px dashed #ecdec6}
+.hazard-item:last-of-type{border-bottom:none}
+.hazard-dist{flex:0 0 auto;min-width:52px;font-size:13px;font-weight:800;color:#b8622d}
+.hazard-type{font-size:13.5px;font-weight:700;color:#6a4f2f}
+.hazard-name{font-size:12.5px;color:#9a8560}
+.hazard-foot{margin-top:8px;font-size:12px;color:#a98d5f;line-height:1.5}
 .land-card{margin-top:16px;border:1px solid var(--teal);background:var(--teal-50);border-radius:14px;padding:16px}
 .land-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:12px;flex-wrap:wrap}
 .land-addr{font-weight:800;font-size:16px;color:var(--teal-700)}.land-pnu{font-size:13px;color:var(--muted)}
