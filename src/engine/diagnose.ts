@@ -49,6 +49,20 @@ export interface LandInput {
   topographyName?: string | null;
   /** 토지형상(공부값) — 정방형/장방형/부정형/자루형 등 */
   topographyShape?: string | null;
+  /** 주변 혐오·기피시설 목록 — nearby-hazards EF가 반경 조회로 제공 */
+  nearbyHazards?: NearbyHazard[] | null;
+}
+
+/** 주변 혐오·기피시설 1건 */
+export interface NearbyHazard {
+  /** 시설 분류 키(landScore HAZARD_TIERS와 매칭) */
+  type: string;
+  /** 시설 분류 표시명(예: 화장장, 축사, 공동묘지) */
+  typeLabel: string;
+  /** 개별 시설명(있으면) */
+  name?: string | null;
+  /** 필지 중심으로부터 직선거리(m) */
+  distanceM: number;
 }
 
 /** 위험 항목 1건 */
