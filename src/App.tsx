@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { diagnose, LandInput, DiagnosisResult } from './engine/diagnose';
+import { diagnose, LandInput, DiagnosisResult, NearbyHazard } from './engine/diagnose';
 import { Purpose, PURPOSE_LABELS } from './engine/purposes';
 import { scoreLand, CATEGORY_ORDER, CATEGORY_LABELS, ScoreCategory } from './engine/landScore';
 import { fetchOrdinance, OrdinanceResult } from './engine/ordinance';
@@ -306,6 +306,7 @@ export default function App() {
   const [building, setBuilding] = useState<BuildingInfo|null>(null);
   const [bldChecked, setBldChecked] = useState(false);
   const [charact, setCharact] = useState<LandCharact|null>(null);
+  const [hazards, setHazards] = useState<NearbyHazard[]|null>(null);
   const [infraOpen, setInfraOpen] = useState<string|null>('road');
   const [showMinor, setShowMinor] = useState(false);
 
@@ -348,7 +349,7 @@ export default function App() {
 
   // 토지 자체의 항목별 활용성 점수(부동산 투자자 관점).
   // 도로/접도·규제·경사·용도지역·지목·면적 등 실제 토지 조건을 0~100으로 산출.
-  // 입지(혐오·편의시설) 항목은 데이터 연동 전이라 status:'pending'으로 숨겨진다.
+  // 혐오시설은 nearbyHazards로 연동되고, 편의시설은 데이터 연동 전이라 pending으로 숨겨진다.
   const landScore = useMemo(() => {
     if (!land) return null;
     const base: LandInput = {
@@ -364,6 +365,7 @@ export default function App() {
       roadSideLevel: charact?.roadLevel ?? null,
       topographyName: charact?.topographyHeight ?? null,
       topographyShape: charact?.topographyShape ?? null,
+      nearbyHazards: hazards,
     };
     const result = scoreLand(base);
     // 카테고리별로 그룹핑(측정된 항목만 표시). pending 항목은 데이터가 채워지면 자동 등장.
@@ -373,7 +375,7 @@ export default function App() {
       items: result.items.filter(i => i.category === cat && i.status === 'measured' && i.score != null),
     })).filter(g => g.items.length > 0);
     return { ...result, grouped };
-  }, [land, charact, regs, slope, address, useZoneRaw, jimok, areaSqm]);
+  }, [land, charact, hazards, regs, slope, address, useZoneRaw, jimok, areaSqm]);
 
   function normalizeRegs(raw:string[]):string[]{
     const out=new Set<string>();
@@ -386,7 +388,7 @@ export default function App() {
     // 접근 제어: 비로그인은 조회 불가(로그인 유도). 로그인 사용자는 조회 시 1크레딧 차감.
     if(!auth.userId){ setShowAuth(true); return; }
     setLooking(true); setLookupErr(null); setResults([]); setOrdinance(null); setAiText(null); setAiErr(null);
-    setBuilding(null); setBldChecked(false); setCharact(null);
+    setBuilding(null); setBldChecked(false); setCharact(null); setHazards(null);
     setLand(null);
     // 크레딧 차감(원자적, 서버). 부족하면 조회 중단하고 안내.
     const paid = await auth.consumeCredit();
@@ -428,6 +430,7 @@ export default function App() {
       if(data.pnu){
         fetchBuilding(data.pnu).then(b=>{ setBuilding(b); setBldChecked(true); }).catch(()=>setBldChecked(true));
         fetchCharact(data.pnu).then(setCharact).catch(()=>setCharact(null));
+        fetchHazards(data.pnu, data.lat, data.lng).then(setHazards).catch(()=>setHazards([]));
       }
     }catch(e){ setLookupErr(e instanceof Error?e.message:String(e)); setLand(null); }
     finally{ setLooking(false); }
@@ -461,6 +464,22 @@ export default function App() {
       }
       return data?.characteristics ?? null;
     }catch{ return null; }
+  }
+
+  // 주변 혐오·기피시설 반경 조회(nearby-hazards EF). 실패·미배포 시 빈 배열(영향 없음 취급).
+  async function fetchHazards(pnu:string, lat:number|null, lng:number|null):Promise<NearbyHazard[]>{
+    try{
+      let data:any;
+      if(supabaseReady && supabase){
+        const res=await supabase.functions.invoke('nearby-hazards',{body:{pnu,lat,lng}});
+        if(res.error)return [];
+        data=res.data;
+      }else{
+        const r=await fetch(`${FN_BASE}/nearby-hazards`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pnu,lat,lng})});
+        data=await r.json();
+      }
+      return Array.isArray(data?.hazards) ? data.hazards : [];
+    }catch{ return []; }
   }
 
   function buildInput():LandInput{
@@ -813,6 +832,28 @@ export default function App() {
             <div className="score-caps">
               <div className="score-caps-title">이 토지의 종합 점수를 끌어내린 치명적 결함</div>
               {landScore.caps.map((c,i)=>(<div key={i} className="score-cap-item">• {c}</div>))}
+            </div>
+          )}
+          {hazards!=null && (
+            <div className="hazard-box">
+              <div className="hazard-box-title">
+                주변 혐오·기피시설
+                <span className="hazard-box-sub">공공데이터 기준 · 직선거리</span>
+              </div>
+              {hazards.length===0 ? (
+                <div className="hazard-none">반경 내 조회된 혐오·기피시설이 없습니다. (등록되지 않은 축사·묘지 등은 현장 확인 권장)</div>
+              ) : (
+                <>
+                  {[...hazards].sort((a,b)=>a.distanceM-b.distanceM).map((h,i)=>(
+                    <div key={i} className="hazard-item">
+                      <span className="hazard-dist">{h.distanceM>=1000?`${(h.distanceM/1000).toFixed(1)}km`:`${Math.round(h.distanceM)}m`}</span>
+                      <span className="hazard-type">{h.typeLabel}</span>
+                      {h.name && <span className="hazard-name">{h.name}</span>}
+                    </div>
+                  ))}
+                  <div className="hazard-foot">혐오·기피시설 인접은 지가·환금성에 부정적입니다(사례상 10~30% 하락, 거래 위축). 위 결과는 참고용이며 현장·중개사 확인을 권장합니다.</div>
+                </>
+              )}
             </div>
           )}
           {landScore.grouped.map(group=>(
