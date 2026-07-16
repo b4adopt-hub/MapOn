@@ -36,6 +36,9 @@ select:focus,input:focus{border-color:var(--teal);box-shadow:0 0 0 3px var(--tea
 .score-fill{height:100%;border-radius:999px;transition:width .5s ease}
 .score-num{font-size:13px;font-weight:700;text-align:right;color:var(--muted)}
 .score-cta{margin-top:14px;text-align:center;font-size:13.5px;font-weight:700;color:var(--teal-700);background:var(--teal-50);border-radius:10px;padding:10px}
+.score-caps{margin:0 0 14px;padding:10px 12px;background:#fdecec;border:1px solid #f3c6c6;border-radius:10px}
+.score-caps-title{font-size:12.5px;font-weight:800;color:#b83a3a;margin-bottom:6px}
+.score-cap-item{font-size:13px;color:#8a2f2f;line-height:1.55}
 .land-card{margin-top:16px;border:1px solid var(--teal);background:var(--teal-50);border-radius:14px;padding:16px}
 .land-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:12px;flex-wrap:wrap}
 .land-addr{font-weight:800;font-size:16px;color:var(--teal-700)}.land-pnu{font-size:13px;color:var(--muted)}
