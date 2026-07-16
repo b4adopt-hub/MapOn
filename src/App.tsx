@@ -363,6 +363,7 @@ export default function App() {
       roadSideName: charact?.roadSide ?? null,
       roadSideLevel: charact?.roadLevel ?? null,
       topographyName: charact?.topographyHeight ?? null,
+      topographyShape: charact?.topographyShape ?? null,
     };
     const result = scoreLand(base);
     // 카테고리별로 그룹핑(측정된 항목만 표시). pending 항목은 데이터가 채워지면 자동 등장.
@@ -807,7 +808,13 @@ export default function App() {
               종합 {landScore.overall}점
             </span>
           </div>
-          <p className="score-lead">목적과 무관하게, <b>이 토지 자체의 조건</b>을 부동산 투자자 관점에서 항목별로 평가한 점수입니다. 도로·접도(맹지 여부)를 가장 크게 반영합니다. 점수가 높을수록 활용·환금성이 유리합니다.</p>
+          <p className="score-lead">목적과 무관하게, <b>이 토지 자체의 조건</b>을 부동산 감정평가·투자 실무 기준으로 항목별 평가한 점수입니다. 맹지·개발제한·급경사처럼 개발을 막는 <b>치명적 결함</b>은 다른 장점으로 상쇄하지 않고 종합 점수에 상한을 씌워 보수적으로 반영합니다.</p>
+          {landScore.caps.length>0 && (
+            <div className="score-caps">
+              <div className="score-caps-title">이 토지의 종합 점수를 끌어내린 치명적 결함</div>
+              {landScore.caps.map((c,i)=>(<div key={i} className="score-cap-item">• {c}</div>))}
+            </div>
+          )}
           {landScore.grouped.map(group=>(
             <div key={group.category} className="score-group">
               <div className="score-group-title">{group.label}</div>
