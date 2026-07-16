@@ -2,8 +2,8 @@
 // 토지 활용성 점수 엔진 (부동산 감정평가·투자 실무 기준)
 // - 목적별 등급이 아니라 "토지 자체의 항목별 접합도"를 0~100으로 산출.
 // - 카테고리: physical(물리) / regulation(규제·인허가) / location(입지·주변)
-// - location(혐오시설·편의시설)은 아직 데이터가 없어 status:'pending' 로 나오며,
-//   값이 채워지면(주변조회 함수 연동) 그래프에 자동 등장한다.
+// - location 중 편의시설은 데이터 연동 전이라 status:'pending'으로 숨겨지고,
+//   혐오시설은 nearbyHazards가 채워지면(nearby-hazards EF 연동) 점수로 등장한다.
 //
 // [종합 점수 산정 방식 — 실무 근거]
 //   단순 가중평균은 맹지·개발제한 같은 "치명적 결함(fatal flaw)"을
@@ -17,7 +17,7 @@
 //   보수적으로(낮게) 평가하는 것을 원칙으로 한다.
 // ============================================================
 
-import { LandInput } from './diagnose';
+import { LandInput, NearbyHazard } from './diagnose';
 
 export type ScoreCategory = 'physical' | 'regulation' | 'location';
 
@@ -192,6 +192,75 @@ function scoreArea(input: LandInput): { score: number | null; note: string } {
   return { score: 90, note: `${Math.round(a)}㎡ — 일반적 활용에 적정한 규모입니다.` };
 }
 
+// ── 주변 혐오·기피시설 ───────────────────────────────────────
+// 근거: 공인중개사 확인·설명서는 반경 1km 내 "비선호시설"(장례식장·화장장·
+//   납골당·공동묘지·쓰레기처리장·소각장·분뇨/오폐수처리장·격리병원 등)을
+//   조사·기재하도록 한다. 일부 지자체는 주거밀집지역 500m 이내 가축분뇨처리
+//   시설 등을 제한하고, 폐기물처리시설은 인접 지자체 2km 협의 대상으로 두기도
+//   한다. 연구는 화장장 등에서 반경 5km까지 지가 영향을 분석한다.
+//   → 시설별 severity(영향 강도)와 reach(영향 반경)를 두고, 가장 강한 시설을
+//     거리에 따라 감점한다. 여러 시설이 겹치면 추가 감점한다.
+//   severity: 5(매우 강함) ~ 1(약함). reach: 유의미 영향으로 보는 최대 반경(m).
+
+interface HazardTier { severity: number; reach: number; label: string }
+
+// type 키별 기준. nearby-hazards EF가 넘기는 type과 매칭.
+export const HAZARD_TIERS: Record<string, HazardTier> = {
+  nuclear:    { severity: 5, reach: 5000, label: '원자력·발전시설' },
+  landfill:   { severity: 5, reach: 2000, label: '쓰레기매립장' },
+  incinerator:{ severity: 5, reach: 2000, label: '소각장' },
+  wastewater: { severity: 4, reach: 1500, label: '분뇨·오폐수처리장' },
+  waste:      { severity: 4, reach: 1500, label: '폐기물처리시설' },
+  crematory:  { severity: 4, reach: 2000, label: '화장장' },
+  cemetery:   { severity: 4, reach: 1500, label: '공동묘지' },
+  columbarium:{ severity: 3, reach: 1000, label: '봉안당·납골당' },
+  funeral:    { severity: 3, reach: 1000, label: '장례식장' },
+  prison:     { severity: 4, reach: 2000, label: '교정시설' },
+  powerline:  { severity: 3, reach: 500,  label: '고압송전탑·송전선로' },
+  fuel:       { severity: 3, reach: 1000, label: '유류·가스저장소' },
+  military:   { severity: 3, reach: 2000, label: '군사시설' },
+  livestock:  { severity: 3, reach: 700,  label: '축사·목장(가축분뇨)' },
+  isolation:  { severity: 3, reach: 1000, label: '격리병원' },
+};
+
+/** 주변 혐오·기피시설 — 가장 강한 시설을 거리로 감점, 겹치면 추가 감점.
+ *  nearbyHazards가 null이면(조회 전) pending, 빈 배열이면(조회 결과 없음) 만점. */
+function scoreHazard(input: LandInput): { score: number | null; note: string } {
+  const list = input.nearbyHazards;
+  if (list == null) return { score: null, note: '주변 혐오·기피시설 조회 전입니다.' };
+  if (list.length === 0)
+    return { score: 100, note: '반경 내 조회된 혐오·기피시설이 없습니다(공공데이터 기준).' };
+
+  type Hit = { h: NearbyHazard; tier: HazardTier; penalty: number };
+  const hits: Hit[] = [];
+  for (const h of list) {
+    const tier = HAZARD_TIERS[h.type];
+    if (!tier) continue;
+    if (h.distanceM > tier.reach) continue; // 영향 반경 밖은 제외
+    const ratio = Math.max(0, Math.min(1, h.distanceM / tier.reach));
+    const maxPen = 10 + tier.severity * 15;      // sev5=85 … sev1=25
+    const penalty = maxPen * (1 - 0.8 * ratio);   // 바로 옆=maxPen, 경계=maxPen*0.2
+    hits.push({ h, tier, penalty });
+  }
+  if (!hits.length)
+    return { score: 100, note: '영향 반경 내 혐오·기피시설이 없습니다(반경 밖 시설만 조회됨).' };
+
+  hits.sort((a, b) => b.penalty - a.penalty);
+  const worst = hits[0];
+  const extra = hits.slice(1).reduce((s, x) => s + x.penalty * 0.5, 0);
+  const totalPenalty = Math.min(92, worst.penalty + extra);
+  const score = Math.max(8, Math.round(100 - totalPenalty));
+
+  const near = worst.h;
+  const dist = Math.round(near.distanceM);
+  const others = hits.length > 1 ? ` 외 ${hits.length - 1}곳` : '';
+  const nm = near.name ? `${near.name}(${worst.tier.label})` : worst.tier.label;
+  return {
+    score,
+    note: `${dist}m 거리 ${nm}${others} — 반경 내 혐오·기피시설로 지가·환금성에 부정적입니다(사례상 10~30% 하락, 거래 위축).`,
+  };
+}
+
 // ── 치명적 결함 상한(cap) ────────────────────────────────────
 // 개발·건축을 실질적으로 막는 결함은 다른 장점으로 희석되면 안 되므로,
 // 가중평균 결과에 "이 이상은 줄 수 없다"는 상한을 씌운다.
@@ -199,7 +268,7 @@ function scoreArea(input: LandInput): { score: number | null; note: string } {
 interface Cap { cap: number; label: string }
 
 function fatalCaps(input: LandInput, scores: {
-  reg: number | null; slope: number | null; zone: number | null;
+  reg: number | null; slope: number | null; zone: number | null; hazard: number | null;
 }): Cap[] {
   const caps: Cap[] = [];
 
@@ -228,6 +297,12 @@ function fatalCaps(input: LandInput, scores: {
     caps.push({ cap: 55, label: '개발 제한 용도지역 — 일반 건축이 크게 제한됨' });
   }
 
+  // 5) 강한 혐오·기피시설이 매우 근접 — 지가·환금성 자체가 크게 훼손됨.
+  if (scores.hazard != null) {
+    if (scores.hazard <= 20) caps.push({ cap: 45, label: '강한 혐오·기피시설 초근접 — 지가·환금성 훼손' });
+    else if (scores.hazard <= 40) caps.push({ cap: 60, label: '혐오·기피시설 근접 — 지가·거래에 부정적' });
+  }
+
   return caps;
 }
 
@@ -241,6 +316,7 @@ export function scoreLand(input: LandInput): LandScoreResult {
   const jimok = scoreJimok(input);
   const shape = scoreShape(input);
   const area = scoreArea(input);
+  const hazard = scoreHazard(input);
 
   const items: ScoreItem[] = [
     // 물리적 조건 — 도로/접도 가중치 최상
@@ -252,8 +328,8 @@ export function scoreLand(input: LandInput): LandScoreResult {
     // 규제 · 인허가
     { key: 'reg',    label: '건축 · 개발 제한',  category: 'regulation', weight: 2.8, ...wrap(reg) },
     { key: 'zone',   label: '용도지역 활용도',   category: 'regulation', weight: 1.2, ...wrap(zone) },
-    // 입지 · 주변환경 — 데이터 연동 전이라 pending(그래프에서 숨김).
-    { key: 'hazard', label: '혐오시설 인접',     category: 'location',   weight: 2.0, score: null, status: 'pending', note: '주변 축사·공장·송전탑·폐기물시설 등 인접 분석(추후 데이터 연동).' },
+    // 입지 · 주변환경 — 혐오시설은 nearbyHazards 연동, 편의시설은 데이터 연동 전 pending.
+    { key: 'hazard', label: '혐오시설 인접',     category: 'location',   weight: 2.0, ...wrap(hazard) },
     { key: 'amenity',label: '편의시설 접근성',   category: 'location',   weight: 1.0, score: null, status: 'pending', note: '마트·병원·학교·대중교통 접근성 분석(추후 데이터 연동).' },
   ];
 
@@ -266,7 +342,7 @@ export function scoreLand(input: LandInput): LandScoreResult {
     : null;
 
   // 2) 치명적 결함 상한 적용(가장 낮은 상한으로 끌어내림) + 결함 개수만큼 추가 감점
-  const caps = fatalCaps(input, { reg: reg.score, slope: slope.score, zone: zone.score });
+  const caps = fatalCaps(input, { reg: reg.score, slope: slope.score, zone: zone.score, hazard: hazard.score });
 
   let overall: number | null = weighted == null ? null : Math.round(weighted);
   if (overall != null && caps.length) {
