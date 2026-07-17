@@ -41,6 +41,10 @@ export interface LandScoreResult {
   overall: number | null;
   /** 종합 점수에 적용된 치명적 결함 목록(설명용). */
   caps: string[];
+  /** 미확정(pending) 항목이 모두 최악일 때의 종합 하한. overall이 null이면 null. */
+  overallMin: number | null;
+  /** 미확정(pending) 항목이 모두 최선일 때의 종합 상한(치명적 결함 상한 반영). */
+  overallMax: number | null;
   categories: Record<ScoreCategory, string>;
 }
 
@@ -352,7 +356,33 @@ export function scoreLand(input: LandInput): LandScoreResult {
     overall = Math.max(8, Math.min(overall, lowestCap - extraPenalty));
   }
 
-  return { items, overall, caps: caps.map((c) => c.label), categories: CATEGORY_LABELS };
+  // ── 종합점수 가능 범위(최저~최고) ──
+  // pending 항목을 최악/최선으로 가정한 시나리오 점수. 확정 점수(overall)는 항상 이 범위 안.
+  //  - 최고: pending 전부 100점 가정 → 현재 caps 상한 적용
+  //  - 최저: pending 전부 최악(혐오시설 8점, 그 외 0점) 가정 → 최악 시 발동할 cap까지 반영
+  const scenario = (fill: (key: string) => number, extraCaps: Cap[]): number | null => {
+    if (weighted == null) return null;
+    const wsum = items.reduce((s, i) => s + i.weight, 0);
+    const avg = items.reduce((s, i) => s + ((i.status === 'measured' && i.score != null) ? i.score : fill(i.key)) * i.weight, 0) / wsum;
+    let v = Math.round(avg);
+    const allCaps = [...caps, ...extraCaps];
+    if (allCaps.length) {
+      const low = Math.min(...allCaps.map((c) => c.cap));
+      const ep = Math.max(0, allCaps.length - 1) * 5;
+      v = Math.max(8, Math.min(v, low - ep));
+    }
+    return v;
+  };
+  const hazardPending = hazard.score == null;
+  let overallMax = scenario(() => 100, []);
+  let overallMin = scenario((k) => (k === 'hazard' ? 8 : 0),
+    hazardPending ? [{ cap: 45, label: '혐오시설 최악 가정' }] : []);
+  if (overall != null) {
+    if (overallMax != null) overallMax = Math.max(overallMax, overall);
+    if (overallMin != null) overallMin = Math.min(overallMin, overall);
+  }
+
+  return { items, overall, caps: caps.map((c) => c.label), overallMin, overallMax, categories: CATEGORY_LABELS };
 }
 
 function wrap(r: { score: number | null; note: string }): { score: number | null; status: 'measured' | 'pending'; note: string } {
