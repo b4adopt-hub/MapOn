@@ -1,5 +1,7 @@
-import { useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
+// 새 창(인쇄 전용 문서)에 그대로 주입하기 위해 CSS를 문자열로 가져온다.
+import reportCss from './LandReport.css?inline';
 
 /**
  * 토지 사전검토 리포트(인쇄·PDF 저장용 전용 문서).
@@ -8,7 +10,8 @@ import { createPortal } from 'react-dom';
  *  - 별도 PDF 라이브러리를 쓰지 않고 브라우저 인쇄(→ "PDF로 저장")를 사용한다.
  *    한글 폰트 임베딩 문제가 없고, 텍스트가 벡터로 남아 확대해도 선명하며,
  *    모바일 크롬/사파리에서도 동일하게 동작하기 때문이다.
- *  - 화면(App)의 상태를 그대로 받아 재계산 없이 렌더한다. 리포트는 "그 시점의 스냅샷".
+ *  - 인쇄는 "현재 창"이 아니라 리포트 문서만 담은 새 창을 열어 수행한다.
+ *    앱 화면이 그 창에 존재하지 않으므로 화면이 인쇄될 여지가 원천적으로 없다.
  *  - 화면에서 접혀 있는 항목(기반시설 아코디언 등)도 리포트에서는 전부 펼쳐서 수록한다.
  *  - 조작 UI(토글·입력)는 문서에 넣지 않는다. 읽는 문서로만 구성한다.
  *  - 그래프·도식은 외부 차트 라이브러리 없이 SVG/CSS로 직접 그린다(인쇄 색 보존).
@@ -75,7 +78,7 @@ export interface ReportOrdinanceItem {
 
 export interface LandReportProps {
   onClose: () => void;
-  /** 열리자마자 인쇄 대화상자를 띄울지 */
+  /** 열리자마자 인쇄 창을 띄울지 */
   autoPrint?: boolean;
 
   address: string | null;
@@ -231,40 +234,49 @@ export default function LandReport(props: LandReportProps) {
     return `${d.getFullYear()}.${p(d.getMonth() + 1)}.${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
   }, []);
 
-  // 열리면 인쇄 대화상자를 띄우고, 인쇄가 끝나면(또는 취소되면) 리포트를 닫는다.
-  // 인쇄 시 앱 화면이 함께 출력되지 않도록, CSS 셀렉터에만 의존하지 않고
-  // body 직계 요소(리포트 오버레이 제외)에 숨김 클래스를 직접 부여한다.
-  useEffect(() => {
-    document.body.classList.add('rp-printing');
-    const others = Array.from(document.body.children).filter(
-      (el) => !el.classList.contains('rp-overlay')
-    );
-    others.forEach((el) => el.classList.add('rp-print-hide'));
-    const after = () => onClose();
-    window.addEventListener('afterprint', after);
-    let t: number | undefined;
-    if (autoPrint) {
-      // 레이아웃이 그려진 뒤 인쇄해야 그래프가 누락되지 않는다.
-      t = window.setTimeout(() => window.print(), 400);
+  // 인쇄는 "현재 창"을 인쇄하지 않는다.
+  // 리포트 문서만 담은 새 창을 열어 그 창을 인쇄한다.
+  // 앱 화면이 그 창에 아예 존재하지 않으므로, 화면이 인쇄될 여지가 원천적으로 없다.
+  const printDocument = useCallback(() => {
+    const page = document.querySelector('.rp-page');
+    if (!page) return;
+    const w = window.open('', '_blank');
+    if (!w) {
+      alert('팝업이 차단되어 인쇄 창을 열지 못했습니다. 브라우저 주소창 옆의 팝업 차단을 해제한 뒤 다시 시도해 주세요.');
+      return;
     }
-    return () => {
-      document.body.classList.remove('rp-printing');
-      others.forEach((el) => el.classList.remove('rp-print-hide'));
-      window.removeEventListener('afterprint', after);
-      if (t) window.clearTimeout(t);
-    };
-  }, [autoPrint, onClose]);
+    w.document.open();
+    w.document.write(
+      '<!doctype html><html lang="ko"><head><meta charset="utf-8">'
+      + '<meta name="viewport" content="width=device-width,initial-scale=1">'
+      + '<title>토지 활용 사전검토 리포트</title>'
+      + '<style>' + reportCss + '</style>'
+      + '<style>body{margin:0;background:#fff}.rp-page{box-shadow:none;margin:0 auto;max-width:820px}</style>'
+      + '</head><body>' + page.outerHTML + '</body></html>'
+    );
+    w.document.close();
+    const doPrint = () => { try { w.focus(); w.print(); } catch (_e) { /* 사용자가 수동 인쇄 */ } };
+    if (w.document.readyState === 'complete') window.setTimeout(doPrint, 400);
+    else w.onload = () => window.setTimeout(doPrint, 400);
+  }, []);
+
+  // 열리면 자동으로 인쇄 창을 띄운다(팝업 차단 시 화면의 버튼으로 재시도 가능).
+  useEffect(() => {
+    if (!autoPrint) return;
+    const t = window.setTimeout(printDocument, 350);
+    return () => window.clearTimeout(t);
+  }, [autoPrint, printDocument]);
 
   const sortedHazards = hazards ? [...hazards].sort((a, b) => a.distanceM - b.distanceM) : null;
   const nearestHazard = sortedHazards && sortedHazards.length ? sortedHazards[0] : null;
 
-  // body 직계로 포털 렌더. (App 내부에 두면 인쇄용 숨김 셀렉터가 조상 요소에 막힌다)
+  // body 직계로 포털 렌더(앱 레이아웃의 영향을 받지 않게)
   return createPortal(
     <div className="rp-overlay" role="dialog" aria-label="토지 사전검토 리포트">
       <div className="rp-toolbar no-print">
-        <button className="rp-btn" onClick={() => window.print()}>인쇄 · PDF로 저장</button>
+        <button className="rp-btn" onClick={printDocument}>인쇄 · PDF로 저장</button>
         <button className="rp-btn ghost" onClick={onClose}>닫기</button>
-        <span className="rp-toolbar-hint">인쇄 대화상자에서 대상을 <b>"PDF로 저장"</b>으로 선택하세요.</span>
+        <span className="rp-toolbar-hint">인쇄 창이 뜨면 대상을 <b>"PDF로 저장"</b>으로 선택하세요.</span>
       </div>
 
       <article className="rp-page">
