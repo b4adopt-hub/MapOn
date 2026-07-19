@@ -121,3 +121,26 @@
   /* 배경색·그래프 색이 인쇄에서 빠지지 않도록 강제 */
   *{-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important}
 }
+
+/* 기반시설 10개 항목(리포트) — 화면과 동일한 내용을 전량 수록 */
+.rp-infra{border:1px solid #e2ded4;border-radius:8px;padding:10px 13px;margin:0 0 9px;background:#fff}
+.rp-infra.core{border-color:#cfe0d8;background:#fbfdfc}
+.rp-infra-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.rp-infra-title{font-size:13.2px;font-weight:800;color:#20211f}
+.rp-infra-star{color:#c2622d;margin-right:5px;font-size:10px;vertical-align:2px}
+.rp-infra-tags{display:flex;gap:5px;align-items:center;flex-wrap:wrap}
+.rp-infra-grade{font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:10px;border:1px solid #d9d4c9;color:#4a4a45;background:#f7f5f0}
+.rp-infra-grade.g-a{border-color:#bcd9c9;background:#eff7f2;color:#1a7f4b}
+.rp-infra-grade.g-b{border-color:#c9d7ea;background:#f1f5fb;color:#2d6cb8}
+.rp-infra-grade.g-c{border-color:#ecd9b4;background:#fbf6ec;color:#a2761f}
+.rp-infra-grade.g-d{border-color:#eec9b8;background:#fdf3ee;color:#c2622d}
+.rp-infra-tag{font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:10px}
+.rp-infra-tag.core{background:#1f5c4d;color:#fff}
+.rp-infra-tag.minor{background:#eeece5;color:#8a857a}
+.rp-infra-tag.exist{background:#f1f5fb;color:#2d6cb8;border:1px solid #c9d7ea}
+.rp-infra-lead{margin:6px 0 5px;font-size:12.2px;color:#4a4a45}
+.rp-infra-list{margin:0;padding-left:16px}
+.rp-infra-list li{font-size:11.9px;color:#4a4a45;margin:1.5px 0}
+.rp-infra-note{margin-top:6px;font-size:11.6px;color:#a2761f;background:#fbf6ec;padding:5px 9px;border-radius:5px}
+.rp-infra-contact{margin-top:5px;font-size:11.3px;color:#7a7568}
+@media print{ .rp-infra{break-inside:avoid} }
