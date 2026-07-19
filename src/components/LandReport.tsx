@@ -6,15 +6,14 @@ import reportCss from './LandReport.css?inline';
 /**
  * 토지 사전검토 리포트(인쇄·PDF 저장용 전용 문서).
  *
- * 설계 의도
+ * 동작 방식
+ *  - 이 컴포넌트는 화면에 보이지 않는다. 화면 밖(off-screen)에서 렌더만 된다.
+ *  - 렌더된 HTML을 새 창으로 옮겨 그 창을 인쇄한다. 앱 화면은 그 창에 존재하지 않으므로
+ *    화면이 인쇄될 여지가 없다. 사용자가 보는 것은 "새 창 하나"뿐이다.
  *  - 별도 PDF 라이브러리를 쓰지 않고 브라우저 인쇄(→ "PDF로 저장")를 사용한다.
- *    한글 폰트 임베딩 문제가 없고, 텍스트가 벡터로 남아 확대해도 선명하며,
- *    모바일 크롬/사파리에서도 동일하게 동작하기 때문이다.
- *  - 인쇄는 "현재 창"이 아니라 리포트 문서만 담은 새 창을 열어 수행한다.
- *    앱 화면이 그 창에 존재하지 않으므로 화면이 인쇄될 여지가 원천적으로 없다.
+ *    한글 폰트 임베딩 문제가 없고, 텍스트가 벡터로 남아 확대해도 선명하다.
  *  - 화면에서 접혀 있는 항목(기반시설 아코디언 등)도 리포트에서는 전부 펼쳐서 수록한다.
- *  - 조작 UI(토글·입력)는 문서에 넣지 않는다. 읽는 문서로만 구성한다.
- *  - 그래프·도식은 외부 차트 라이브러리 없이 SVG/CSS로 직접 그린다(인쇄 색 보존).
+ *  - 조작 UI(토글·입력·버튼)는 문서에 넣지 않는다. 읽는 문서로만 구성한다.
  */
 
 export interface ReportHazard {
@@ -236,13 +235,12 @@ export default function LandReport(props: LandReportProps) {
 
   // 인쇄는 "현재 창"을 인쇄하지 않는다.
   // 리포트 문서만 담은 새 창을 열어 그 창을 인쇄한다.
-  // 앱 화면이 그 창에 아예 존재하지 않으므로, 화면이 인쇄될 여지가 원천적으로 없다.
   const printDocument = useCallback(() => {
     const page = document.querySelector('.rp-page');
     if (!page) return;
     const w = window.open('', '_blank');
     if (!w) {
-      alert('팝업이 차단되어 인쇄 창을 열지 못했습니다. 브라우저 주소창 옆의 팝업 차단을 해제한 뒤 다시 시도해 주세요.');
+      alert('팝업이 차단되어 리포트 창을 열지 못했습니다. 브라우저 주소창 옆의 팝업 차단을 해제한 뒤 다시 시도해 주세요.');
       return;
     }
     w.document.open();
@@ -260,25 +258,24 @@ export default function LandReport(props: LandReportProps) {
     else w.onload = () => window.setTimeout(doPrint, 400);
   }, []);
 
-  // 열리면 자동으로 인쇄 창을 띄운다(팝업 차단 시 화면의 버튼으로 재시도 가능).
+  // 이 컴포넌트는 화면에 보이지 않는다(화면 밖에서 렌더만 된다).
+  // 렌더가 끝나면 그 HTML을 새 창으로 옮겨 인쇄하고, 즉시 스스로 닫힌다.
+  // 사용자가 보는 것은 "새 창 하나"뿐이다.
   useEffect(() => {
     if (!autoPrint) return;
-    const t = window.setTimeout(printDocument, 350);
+    const t = window.setTimeout(() => {
+      printDocument();
+      onClose();
+    }, 220);
     return () => window.clearTimeout(t);
-  }, [autoPrint, printDocument]);
+  }, [autoPrint, printDocument, onClose]);
 
   const sortedHazards = hazards ? [...hazards].sort((a, b) => a.distanceM - b.distanceM) : null;
   const nearestHazard = sortedHazards && sortedHazards.length ? sortedHazards[0] : null;
 
-  // body 직계로 포털 렌더(앱 레이아웃의 영향을 받지 않게)
+  // body 직계로 포털 렌더(앱 레이아웃의 영향을 받지 않게) + 화면 밖 배치
   return createPortal(
-    <div className="rp-overlay" role="dialog" aria-label="토지 사전검토 리포트">
-      <div className="rp-toolbar no-print">
-        <button className="rp-btn" onClick={printDocument}>인쇄 · PDF로 저장</button>
-        <button className="rp-btn ghost" onClick={onClose}>닫기</button>
-        <span className="rp-toolbar-hint">인쇄 창이 뜨면 대상을 <b>"PDF로 저장"</b>으로 선택하세요.</span>
-      </div>
-
+    <div className="rp-overlay rp-offscreen" aria-hidden="true">
       <article className="rp-page">
         <header className="rp-head">
           <div className="rp-brand">
@@ -417,7 +414,7 @@ export default function LandReport(props: LandReportProps) {
             <h2 className="rp-sec-title"><span className="rp-num">3</span>토지 활용성 점수</h2>
             <p className="rp-lead">
               목적과 무관하게 이 토지 자체의 조건을 감정평가·투자 실무 기준으로 항목별 평가한 점수입니다.
-              맹지·개발제한·급경사처럼 개발을 막는 <b>치명적 결함</b>은 다른 장점으로 상쇄하지 않고 종합 점수에 상한을 씌워 보수적으로 반영합니다.
+              맹지·개발제한·급경사처럼 개발을 막는 <b>치명적 결함</b>은 다른 장점으로 상쇄하지 않고 종합 점수에 상한을 씩워 보수적으로 반영합니다.
             </p>
 
             <div className="rp-overall">
