@@ -2,7 +2,7 @@ import { useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 
 /**
- * 토지 사전검토 리포트(인쇄·PDF 저장용 전용 뷰).
+ * 토지 사전검토 리포트(인쇄·PDF 저장용 전용 문서).
  *
  * 설계 의도
  *  - 별도 PDF 라이브러리를 쓰지 않고 브라우저 인쇄(→ "PDF로 저장")를 사용한다.
@@ -10,6 +10,7 @@ import { createPortal } from 'react-dom';
  *    모바일 크롬/사파리에서도 동일하게 동작하기 때문이다.
  *  - 화면(App)의 상태를 그대로 받아 재계산 없이 렌더한다. 리포트는 "그 시점의 스냅샷".
  *  - 화면에서 접혀 있는 항목(기반시설 아코디언 등)도 리포트에서는 전부 펼쳐서 수록한다.
+ *  - 조작 UI(토글·입력)는 문서에 넣지 않는다. 읽는 문서로만 구성한다.
  *  - 그래프·도식은 외부 차트 라이브러리 없이 SVG/CSS로 직접 그린다(인쇄 색 보존).
  */
 
@@ -116,11 +117,11 @@ export interface LandReportProps {
 }
 
 const GRADE_COLOR: Record<string, string> = {
-  '가능성 높음': '#1a7f4b',
-  '조건부 검토': '#2d6cb8',
-  '전문가 확인 필요': '#b8862d',
-  '리스크 높음': '#c2622d',
-  '불가 가능성 높음': '#b83a3a',
+  '가능성 높음': '#186b41',
+  '조건부 검토': '#2a5f9e',
+  '전문가 확인 필요': '#8e6416',
+  '리스크 높음': '#b8541f',
+  '불가 가능성 높음': '#a8321f',
 };
 
 const GRADE_DESC: Record<string, string> = {
@@ -128,7 +129,7 @@ const GRADE_DESC: Record<string, string> = {
 };
 
 function scoreColor(v: number): string {
-  return v >= 70 ? '#1a7f4b' : v >= 45 ? '#b8862d' : '#c2622d';
+  return v >= 70 ? '#186b41' : v >= 45 ? '#8e6416' : '#b8541f';
 }
 
 function fmtDist(m: number): string {
@@ -151,8 +152,7 @@ function HazardDiagram({ hazards }: { hazards: ReportHazard[] }) {
   const size = 320;
   const cx = size / 2;
   const cy = size / 2;
-  const rMax = 132;
-  // 눈금 반경(m): 가장 먼 시설을 기준으로 500/1000/2000 중 적절히
+  const rMax = 128;
   const maxM = Math.max(500, ...hazards.map((h) => h.distanceM));
   const rings = maxM <= 700 ? [250, 500, 700] : maxM <= 1500 ? [500, 1000, 1500] : [1000, 2000, 3000];
   const scale = (m: number) => Math.min(rMax, (m / rings[rings.length - 1]) * rMax);
@@ -161,13 +161,12 @@ function HazardDiagram({ hazards }: { hazards: ReportHazard[] }) {
     <svg className="rp-diagram" viewBox={`0 0 ${size} ${size}`} role="img" aria-label="주변 혐오·기피시설 거리 도식">
       {rings.map((r) => (
         <g key={r}>
-          <circle cx={cx} cy={cy} r={scale(r)} fill="none" stroke="#d9d4c9" strokeWidth="1" strokeDasharray="3 3" />
+          <circle cx={cx} cy={cy} r={scale(r)} fill="none" stroke="#cfc9bb" strokeWidth="1" strokeDasharray="3 3" />
           <text x={cx + 3} y={cy - scale(r) + 11} className="rp-diagram-ring">
             {r >= 1000 ? `${r / 1000}km` : `${r}m`}
           </text>
         </g>
       ))}
-      {/* 대상 필지 */}
       <circle cx={cx} cy={cy} r="6" fill="#1f5c4d" />
       <text x={cx} y={cy + 20} textAnchor="middle" className="rp-diagram-self">대상 필지</text>
 
@@ -181,7 +180,7 @@ function HazardDiagram({ hazards }: { hazards: ReportHazard[] }) {
         const anchor = Math.abs(Math.cos(angle)) < 0.3 ? 'middle' : Math.cos(angle) > 0 ? 'start' : 'end';
         return (
           <g key={i}>
-            <line x1={cx} y1={cy} x2={x} y2={y} stroke="#c2622d" strokeWidth="1" opacity="0.45" />
+            <line x1={cx} y1={cy} x2={x} y2={y} stroke="#c2622d" strokeWidth="1" opacity="0.5" />
             <circle cx={x} cy={y} r="4.5" fill="#c2622d" />
             <text x={labelX} y={labelY} textAnchor={anchor} className="rp-diagram-label">
               {h.typeLabel} {fmtDist(h.distanceM)}
@@ -246,7 +245,7 @@ export default function LandReport(props: LandReportProps) {
     let t: number | undefined;
     if (autoPrint) {
       // 레이아웃이 그려진 뒤 인쇄해야 그래프가 누락되지 않는다.
-      t = window.setTimeout(() => window.print(), 350);
+      t = window.setTimeout(() => window.print(), 400);
     }
     return () => {
       document.body.classList.remove('rp-printing');
@@ -257,6 +256,7 @@ export default function LandReport(props: LandReportProps) {
   }, [autoPrint, onClose]);
 
   const sortedHazards = hazards ? [...hazards].sort((a, b) => a.distanceM - b.distanceM) : null;
+  const nearestHazard = sortedHazards && sortedHazards.length ? sortedHazards[0] : null;
 
   // body 직계로 포털 렌더. (App 내부에 두면 인쇄용 숨김 셀렉터가 조상 요소에 막힌다)
   return createPortal(
@@ -285,6 +285,42 @@ export default function LandReport(props: LandReportProps) {
         <section className="rp-addr-block">
           <h1 className="rp-addr">{address ?? '-'}</h1>
           <div className="rp-pnu">PNU {pnu ?? '-'}</div>
+        </section>
+
+        {/* 핵심 요약 — 첫 장에서 판단 근거가 한눈에 들어오도록 */}
+        <section className="rp-summary">
+          <div className="rp-sum-card">
+            <div className="rp-sum-label">활용성 종합</div>
+            <div className="rp-sum-value" style={{ color: overall != null ? scoreColor(overall) : '#43443f' }}>
+              {overall != null ? `${overall}점` : '-'}
+            </div>
+            <div className="rp-sum-note">
+              {overallMin != null && overallMax != null ? `가능 범위 ${overallMin}~${overallMax}점` : '100점 만점'}
+            </div>
+          </div>
+          <div className="rp-sum-card">
+            <div className="rp-sum-label">사전검토 등급</div>
+            <div className="rp-sum-value" style={{ color: GRADE_COLOR[ruleResults[0]?.gradeLabel] ?? '#43443f', fontSize: 15 }}>
+              {ruleResults[0]?.gradeLabel ?? '-'}
+            </div>
+            <div className="rp-sum-note">
+              {ruleResults.length > 1 ? `${ruleResults[0]?.purposeLabel} 외 ${ruleResults.length - 1}건` : (ruleResults[0]?.purposeLabel ?? '-')}
+            </div>
+          </div>
+          <div className="rp-sum-card">
+            <div className="rp-sum-label">치명적 결함</div>
+            <div className="rp-sum-value" style={{ color: caps.length ? '#b8541f' : '#186b41' }}>
+              {caps.length ? `${caps.length}건` : '없음'}
+            </div>
+            <div className="rp-sum-note">{caps.length ? '종합 점수에 상한 적용' : '개발을 막는 결함 미확인'}</div>
+          </div>
+          <div className="rp-sum-card">
+            <div className="rp-sum-label">최근접 혐오시설</div>
+            <div className="rp-sum-value" style={{ color: nearestHazard ? '#b8541f' : '#186b41', fontSize: nearestHazard ? 19 : 16 }}>
+              {nearestHazard ? fmtDist(nearestHazard.distanceM) : '반경 내 없음'}
+            </div>
+            <div className="rp-sum-note">{nearestHazard ? nearestHazard.typeLabel : '공공데이터 기준'}</div>
+          </div>
         </section>
 
         {/* 1. 토지 개요 */}
@@ -365,7 +401,7 @@ export default function LandReport(props: LandReportProps) {
 
         {/* 3. 활용성 점수 */}
         {overall != null && (
-          <section className="rp-sec">
+          <section className="rp-sec rp-break">
             <h2 className="rp-sec-title"><span className="rp-num">3</span>토지 활용성 점수</h2>
             <p className="rp-lead">
               목적과 무관하게 이 토지 자체의 조건을 감정평가·투자 실무 기준으로 항목별 평가한 점수입니다.
@@ -442,7 +478,7 @@ export default function LandReport(props: LandReportProps) {
           <section className="rp-sec rp-break">
             <h2 className="rp-sec-title"><span className="rp-num">5</span>활용 계획 사전검토</h2>
             {freeText && (
-              <p className="rp-quote">“{freeText}”</p>
+              <p className="rp-quote">{freeText}</p>
             )}
             {ruleResults.map((r) => (
               <div key={r.purpose} className="rp-rule">
@@ -482,7 +518,7 @@ export default function LandReport(props: LandReportProps) {
               용도지역·규제는 자동 조회되지만, 건축물 높이·건폐율 특례·가축사육 거리 등 세부 기준은 지자체 조례로 정해집니다. 아래 항목을 조례에서 확인하세요.
             </p>
             <table className="rp-table">
-              <thead><tr><th>항목</th><th>확인 내용</th><th>근거</th></tr></thead>
+              <thead><tr><th style={{ width: '22%' }}>항목</th><th>확인 내용</th><th style={{ width: '24%' }}>근거</th></tr></thead>
               <tbody>
                 {ordinanceItems.map((it) => (
                   <tr key={it.key}>
