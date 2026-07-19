@@ -124,7 +124,7 @@ export function buildScenarios(inp: ScenarioInput): ScenarioResult | null {
       cautions.push('증축·별동 신축은 건축허가(경우에 따라 개발행위허가 포함) 대상이며, 자연보전권역 등 규제구역에서는 규모·업종 심사가 추가될 수 있습니다.');
       cautions.push('기존 건물이 현행 기준(도로 폭·주차 등)에 부적합하면 증축 시 보완이 요구될 수 있습니다.');
     } else {
-      headline = '건폐율·용적률 여유가 사실상 없음 — 증축·별동 신축 곶란';
+      headline = '건폐율·용적률 여유가 사실상 없음 — 증축·별동 신축 곤란';
       if (remFoot <= 5) lines.push(`건폐율 ${bcrPct}% 기준 바닥 상한 ${fmtArea(maxFoot)}을 기존 건축면적 ${fmtArea(archArea)}이 거의 소진했습니다.`);
       if (remGfa <= 5) lines.push(`용적률 ${farPct}% 기준 연면적 상한 ${fmtArea(maxGfa)}을 기존 연면적 ${fmtArea(totArea)}이 거의 소진했습니다.`);
       lines.push('이 경우 규모를 키우려면 ③ 철거 후 신축 또는 용도지역·조례상 완화 특례 검토가 필요합니다.');
