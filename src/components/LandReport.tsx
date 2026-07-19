@@ -8,7 +8,8 @@ import { createPortal } from 'react-dom';
  *  - "레포트 출력하기"를 누르면 이 리포트 화면만 전체 화면으로 표시된다(앱 화면을 덮는다).
  *  - 자동 인쇄는 하지 않는다. 상단 "인쇄 · PDF로 저장" 버튼을 눌렀을 때만
  *    인쇄 대화상자가 열린다(대상에서 "PDF로 저장"을 선택하면 저장).
- *  - 인쇄 중에는 body.rp-printing으로 앱 화면을 숨겨 리포트 문서만 종이에 나간다.
+ *  - 리포트가 열려 있는 동안 body.rp-printing이 유지되어, 어떤 경로로 인쇄해도 앱 화면은
+ *    인쇄물에 포함되지 않고 리포트 문서만 종이에 나간다.
  *  - 별도 PDF 라이브러리를 쓰지 않고 브라우저 인쇄를 사용한다.
  *    한글 폰트 임베딩 문제가 없고, 텍스트가 벡터로 남아 확대해도 선명하다.
  *  - 화면에서 접혀 있는 항목(기반시설 아코디언 등)도 리포트에서는 전부 펼쳐서 수록한다.
@@ -229,26 +230,21 @@ export default function LandReport(props: LandReportProps) {
     return `${d.getFullYear()}.${p(d.getMonth() + 1)}.${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
   }, []);
 
-  // 인쇄: 같은 창에서 window.print()를 호출한다(새 창·팝업 차단 문제 없음 — 모바일에서 안정적).
-  // body.rp-printing이 리포트 외 앱 화면을 숨기므로 리포트 문서만 인쇄된다.
-  const printDocument = useCallback(() => {
-    document.body.classList.add('rp-printing');
-    window.setTimeout(() => { window.print(); }, 30);
-  }, []);
-
-  // 인쇄 대화상자가 닫히면 rp-printing을 해제하고, 리포트가 닫힐 때도 정리한다.
-  // 리포트가 떠 있는 동안 배경 앱 화면은 스크롤되지 않게 잠근다.
+  // 리포트가 떠 있는 동안 body에 rp-printing을 계속 달아 둔다(@media print 안에서만 효력이 있어
+  // 화면 표시에는 영향이 없다). 인쇄가 버튼으로 시작되든 브라우저 메뉴로 시작되든,
+  // 리포트가 열려 있는 한 앱 화면은 인쇄물에 절대 포함되지 않는다. 배경 스크롤도 잠근다.
   useEffect(() => {
-    const clearPrinting = () => document.body.classList.remove('rp-printing');
-    window.addEventListener('afterprint', clearPrinting);
+    document.body.classList.add('rp-printing');
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => {
-      window.removeEventListener('afterprint', clearPrinting);
-      clearPrinting();
+      document.body.classList.remove('rp-printing');
       document.body.style.overflow = prevOverflow;
     };
   }, []);
+
+  // 인쇄: 같은 창에서 window.print() — 위 효과 덕분에 리포트 문서만 인쇄된다.
+  const printDocument = useCallback(() => { window.print(); }, []);
 
   const sortedHazards = hazards ? [...hazards].sort((a, b) => a.distanceM - b.distanceM) : null;
   const nearestHazard = sortedHazards && sortedHazards.length ? sortedHazards[0] : null;
