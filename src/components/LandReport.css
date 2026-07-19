@@ -196,3 +196,13 @@
 
   *{-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important}
 }
+
+/* ---------- 앱 화면: 기존 건물 기준 시나리오 ---------- */
+.bs-lead{font-size:13px;color:#47564f;margin:0 0 14px;line-height:1.6}
+.bs-card{border:1px solid #d9e2de;border-radius:12px;padding:14px 16px;margin:0 0 12px;background:#fff}
+.bs-title{font-weight:800;font-size:14.5px;color:#16241f}
+.bs-headline{margin-top:4px;font-size:13.5px;font-weight:700;color:#1f5c4d}
+.bs-line{margin:8px 0 0;font-size:13px;color:#16241f;line-height:1.6}
+.bs-cautions{margin:8px 0 0;padding-left:18px}
+.bs-cautions li{font-size:12.5px;color:#8e6416;margin:3px 0;line-height:1.5}
+.bs-note{margin-top:8px;font-size:12.5px;color:#47564f;background:#eef5f2;border-radius:8px;padding:8px 11px;line-height:1.5}
