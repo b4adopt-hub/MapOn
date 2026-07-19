@@ -993,7 +993,7 @@ export default function App() {
             </button>
           )}
           <div className="report-hint">
-            토지 개요·활용성 점수 그래프·주변 혐오시설 도식·사전검토 판정·AI 분석을 한 편의 문서로 만들어
+            토지 개요·기반시설 10개 항목·활용성 점수 그래프·주변 혐오시설 도식·사전검토 판정·AI 분석을 한 편의 문서로 만들어
             인쇄하거나 PDF로 저장할 수 있습니다.
           </div>
           {reportErr && <div className="lookup-err">{reportErr}</div>}
@@ -1032,6 +1032,18 @@ export default function App() {
           hazards={hazards ? hazards.map(h=>({
             type:h.type, typeLabel:h.typeLabel, name:h.name??null, distanceM:h.distanceM,
           })) : null}
+          infraItems={infraSorted.map(({g,rel})=>{
+            // 기존 주거·근생 건물이 있으면 화면과 동일하게 "기존 시설 상태·승계" 관점 본문으로 교체
+            const ov = hasResidentialBuilding ? EXISTING_BLD_OVERRIDE[g.key] : undefined;
+            return {
+              key:g.key, title:g.title, grade:g.grade, danger:g.danger??null, rel,
+              lead: ov?.lead ?? g.lead,
+              items: ov?.items ?? g.items,
+              purposeNote: (ov ? ov.purposeNote : g.purposeNote) ?? null,
+              contact: g.contact,
+              existing: !!ov,
+            };
+          })}
           freeText={freeText.trim()}
           ruleResults={results.map(r=>({
             purpose:r.purpose, purposeLabel:r.purposeLabel,
