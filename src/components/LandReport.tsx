@@ -49,6 +49,19 @@ export interface ReportRuleResult {
   recommendations: string[];
 }
 
+export interface ReportInfraItem {
+  key: string;
+  title: string;
+  grade: string;          // A~D 데이터 등급
+  danger: number | null;  // 1~5 위험 순위(있으면 상단 정렬)
+  rel: number;            // 활용 목적 관련도 2=핵심 1=일반 0=영향 적음
+  lead: string;
+  items: string[];
+  purposeNote: string | null;
+  contact: string;
+  existing: boolean;      // 기존 건물 기준으로 본문이 교체된 항목인지
+}
+
 export interface ReportOrdinanceItem {
   key: string;
   label: string;
@@ -89,6 +102,7 @@ export interface LandReportProps {
   groups: ReportScoreGroup[];
 
   hazards: ReportHazard[] | null;
+  infraItems: ReportInfraItem[];
 
   freeText: string;
   ruleResults: ReportRuleResult[];
@@ -105,6 +119,10 @@ const GRADE_COLOR: Record<string, string> = {
   '전문가 확인 필요': '#b8862d',
   '리스크 높음': '#c2622d',
   '불가 가능성 높음': '#b83a3a',
+};
+
+const GRADE_DESC: Record<string, string> = {
+  A: '자동 확정', B: '자동 추정', C: '기관 확인', D: '현장 확인',
 };
 
 function scoreColor(v: number): string {
@@ -203,7 +221,7 @@ export default function LandReport(props: LandReportProps) {
     useZoneNames, regulations, roadSide, topographyHeight, topographyShape, landUse, slopePercent,
     hasBuilding, buildingPurpose, buildingUseAprDay, buildingViolation,
     overall, overallMin, overallMax, caps, groups,
-    hazards, freeText, ruleResults, ordinanceSgg, ordinanceItems, aiText, disclaimer,
+    hazards, infraItems, freeText, ruleResults, ordinanceSgg, ordinanceItems, aiText, disclaimer,
   } = props;
 
   const issuedAt = useMemo(() => {
@@ -300,10 +318,45 @@ export default function LandReport(props: LandReportProps) {
           )}
         </section>
 
-        {/* 2. 활용성 점수 */}
+        {/* 2. 기반시설 · 사용성 확인 항목(10개 전체) */}
+        {infraItems.length > 0 && (
+          <section className="rp-sec rp-break">
+            <h2 className="rp-sec-title"><span className="rp-num">2</span>기반시설 · 사용성 확인 항목</h2>
+            <p className="rp-lead">
+              토지 활용 전 확인해야 할 기반시설 {infraItems.length}개 항목을 <b>위험 순</b>으로 정렬했습니다.
+              공공데이터로 알 수 있는 것과 기관·현장 확인이 필요한 것을 등급(A 자동 확정 / B 자동 추정 / C 기관 확인 / D 현장 확인)으로 구분합니다.
+            </p>
+            {infraItems.map((g) => (
+              <div key={g.key} className={`rp-infra${g.rel >= 2 ? ' core' : ''}`}>
+                <div className="rp-infra-head">
+                  <span className="rp-infra-title">
+                    {g.rel >= 2 && <span className="rp-infra-star">●</span>}
+                    {g.title}
+                  </span>
+                  <span className="rp-infra-tags">
+                    <span className={`rp-infra-grade g-${g.grade.toLowerCase()}`}>{g.grade} {GRADE_DESC[g.grade] ?? ''}</span>
+                    {g.rel >= 2 && <span className="rp-infra-tag core">이 활용에 핵심</span>}
+                    {g.rel === 0 && <span className="rp-infra-tag minor">영향 적음</span>}
+                    {g.existing && <span className="rp-infra-tag exist">기존 시설</span>}
+                  </span>
+                </div>
+                <p className="rp-infra-lead">{g.lead}</p>
+                <ul className="rp-infra-list">
+                  {g.items.map((it, i) => (<li key={i}>{it}</li>))}
+                </ul>
+                {g.purposeNote && (
+                  <div className="rp-infra-note">{g.existing ? '참고' : '용도 주의'}: {g.purposeNote}</div>
+                )}
+                <div className="rp-infra-contact">확인처: {g.contact}</div>
+              </div>
+            ))}
+          </section>
+        )}
+
+        {/* 3. 활용성 점수 */}
         {overall != null && (
           <section className="rp-sec">
-            <h2 className="rp-sec-title"><span className="rp-num">2</span>토지 활용성 점수</h2>
+            <h2 className="rp-sec-title"><span className="rp-num">3</span>토지 활용성 점수</h2>
             <p className="rp-lead">
               목적과 무관하게 이 토지 자체의 조건을 감정평가·투자 실무 기준으로 항목별 평가한 점수입니다.
               맹지·개발제한·급경사처럼 개발을 막는 <b>치명적 결함</b>은 다른 장점으로 상쇄하지 않고 종합 점수에 상한을 씌워 보수적으로 반영합니다.
@@ -340,10 +393,10 @@ export default function LandReport(props: LandReportProps) {
           </section>
         )}
 
-        {/* 3. 주변 혐오·기피시설 */}
+        {/* 4. 주변 혐오·기피시설 */}
         {sortedHazards && (
           <section className="rp-sec rp-break">
-            <h2 className="rp-sec-title"><span className="rp-num">3</span>주변 혐오 · 기피시설</h2>
+            <h2 className="rp-sec-title"><span className="rp-num">4</span>주변 혐오 · 기피시설</h2>
             {sortedHazards.length === 0 ? (
               <p className="rp-lead">반경 내 조회된 혐오·기피시설이 없습니다. 다만 공공데이터에 등록되지 않은 축사·묘지 등이 있을 수 있어 현장 확인을 권장합니다.</p>
             ) : (
@@ -374,10 +427,10 @@ export default function LandReport(props: LandReportProps) {
           </section>
         )}
 
-        {/* 4. 활용 계획 사전검토(룰엔진) */}
+        {/* 5. 활용 계획 사전검토(룰엔진) */}
         {ruleResults.length > 0 && (
           <section className="rp-sec rp-break">
-            <h2 className="rp-sec-title"><span className="rp-num">4</span>활용 계획 사전검토</h2>
+            <h2 className="rp-sec-title"><span className="rp-num">5</span>활용 계획 사전검토</h2>
             {freeText && (
               <p className="rp-quote">“{freeText}”</p>
             )}
@@ -411,10 +464,10 @@ export default function LandReport(props: LandReportProps) {
           </section>
         )}
 
-        {/* 5. 지자체 조례 확인 항목 */}
+        {/* 6. 지자체 조례 확인 항목 */}
         {ordinanceItems.length > 0 && (
           <section className="rp-sec">
-            <h2 className="rp-sec-title"><span className="rp-num">5</span>지자체 조례 확인 항목{ordinanceSgg ? ` · ${ordinanceSgg}` : ''}</h2>
+            <h2 className="rp-sec-title"><span className="rp-num">6</span>지자체 조례 확인 항목{ordinanceSgg ? ` · ${ordinanceSgg}` : ''}</h2>
             <p className="rp-lead">
               용도지역·규제는 자동 조회되지만, 건축물 높이·건폐율 특례·가축사육 거리 등 세부 기준은 지자체 조례로 정해집니다. 아래 항목을 조례에서 확인하세요.
             </p>
@@ -433,10 +486,10 @@ export default function LandReport(props: LandReportProps) {
           </section>
         )}
 
-        {/* 6. AI 종합 분석 */}
+        {/* 7. AI 종합 분석 */}
         {aiText && (
           <section className="rp-sec rp-break">
-            <h2 className="rp-sec-title"><span className="rp-num">6</span>AI 종합 분석</h2>
+            <h2 className="rp-sec-title"><span className="rp-num">7</span>AI 종합 분석</h2>
             <div className="rp-ai">
               {aiText.split(/\n{1,}/).filter(Boolean).map((p, i) => (<p key={i}>{p}</p>))}
             </div>
