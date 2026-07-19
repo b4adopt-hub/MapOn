@@ -981,7 +981,8 @@ export default function App() {
         </section>
       )}
 
-      {land && landScore && (
+      {/* 리포트 버튼: 룰엔진 사전검토 + AI 분석이 모두 나온 뒤에만 노출(분석 전에는 담을 내용이 없음) */}
+      {land && landScore && results.length>0 && aiText && (
         <section className="form report-cta">
           {!auth.userId ? (
             <button className="run" onClick={()=>setShowAuth(true)}>로그인하고 리포트 출력 (10크레딧)</button>
@@ -1000,7 +1001,7 @@ export default function App() {
         </section>
       )}
 
-      {reportOpen && land && landScore && (
+      {reportOpen && land && landScore && results.length>0 && (
         <LandReport
           onClose={()=>setReportOpen(false)}
           address={land.address}
