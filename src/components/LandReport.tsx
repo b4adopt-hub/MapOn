@@ -1,4 +1,5 @@
 import { useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 
 /**
  * 토지 사전검토 리포트(인쇄·PDF 저장용 전용 뷰).
@@ -8,6 +9,7 @@ import { useEffect, useMemo } from 'react';
  *    한글 폰트 임베딩 문제가 없고, 텍스트가 벡터로 남아 확대해도 선명하며,
  *    모바일 크롬/사파리에서도 동일하게 동작하기 때문이다.
  *  - 화면(App)의 상태를 그대로 받아 재계산 없이 렌더한다. 리포트는 "그 시점의 스냅샷".
+ *  - 화면에서 접혀 있는 항목(기반시설 아코디언 등)도 리포트에서는 전부 펼쳐서 수록한다.
  *  - 그래프·도식은 외부 차트 라이브러리 없이 SVG/CSS로 직접 그린다(인쇄 색 보존).
  */
 
@@ -249,7 +251,8 @@ export default function LandReport(props: LandReportProps) {
 
   const sortedHazards = hazards ? [...hazards].sort((a, b) => a.distanceM - b.distanceM) : null;
 
-  return (
+  // body 직계로 포털 렌더. (App 내부에 두면 인쇄용 숨김 셀렉터가 조상 요소에 막힌다)
+  return createPortal(
     <div className="rp-overlay" role="dialog" aria-label="토지 사전검토 리포트">
       <div className="rp-toolbar no-print">
         <button className="rp-btn" onClick={() => window.print()}>인쇄 · PDF로 저장</button>
@@ -318,7 +321,7 @@ export default function LandReport(props: LandReportProps) {
           )}
         </section>
 
-        {/* 2. 기반시설 · 사용성 확인 항목(10개 전체) */}
+        {/* 2. 기반시설 · 사용성 확인 항목(10개 전체, 모두 펼침) */}
         {infraItems.length > 0 && (
           <section className="rp-sec rp-break">
             <h2 className="rp-sec-title"><span className="rp-num">2</span>기반시설 · 사용성 확인 항목</h2>
@@ -502,6 +505,7 @@ export default function LandReport(props: LandReportProps) {
           <div className="rp-foot-brand">맵땅 · 토지 활용 사전검토 플랫폼 · 발행 {issuedAt}</div>
         </footer>
       </article>
-    </div>
+    </div>,
+    document.body
   );
 }
