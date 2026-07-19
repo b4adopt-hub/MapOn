@@ -4,6 +4,7 @@ import { Purpose, PURPOSE_LABELS } from './engine/purposes';
 import { scoreLand, CATEGORY_ORDER, CATEGORY_LABELS, ScoreCategory } from './engine/landScore';
 import { fetchOrdinance, OrdinanceResult } from './engine/ordinance';
 import { applyOrdinance } from './engine/gradeAdjust';
+import { buildScenarios } from './engine/buildingScenarios';
 import { supabase, supabaseReady } from './lib/supabase';
 import { useAuth } from './lib/useAuth';
 import AuthModal from './components/AuthModal';
@@ -116,7 +117,7 @@ const INFRA_GROUPS: InfraGroup[] = [
       '배수로·도로 측구·구거로 물이 빠지는 경로가 있는지',
       '주변보다 낮은 저지대·논 매립지·하천 옆 침수 위험',
       '필지 경사 방향, 장마철 침수 이력',
-      '경사지면 옹벽·성토·집수정·우수관 필요 여부',
+      '경사지면 옳벽·성토·집수정·우수관 필요 여부',
       '마당 포장 시 배수계획, 인접지 유출 분쟁 소지',
     ],
     purposeNote:'성토한 땅인데 배수계획이 없으면 비 올 때 물이 모입니다. 현장 확인이 가장 중요합니다.',
@@ -148,7 +149,7 @@ const INFRA_GROUPS: InfraGroup[] = [
   },
   {
     key:'gas', title:'가스 · 난방', grade:'C',
-    lead:'도시가스가 없으면 LPG·기름·전기난방을 써야 하고, 용도에 따라 연료가 제한됩니다.',
+    lead:'도시가스가 없으면 LPG·기름·전기난방을 앨야 하고, 용도에 따라 연료가 제한됩니다.',
     items:[
       '도시가스 공급 지역인지',
       'LPG 사용 시 저장공간·안전기준',
@@ -181,10 +182,10 @@ const INFRA_GROUPS: InfraGroup[] = [
   },
   {
     key:'civil', title:'토목 · 지형', grade:'D',
-    lead:'보기에는 넓어도 경사·성토·암반이면 평탄화·옹벽에 토목비가 크게 듭니다.',
+    lead:'보기에는 넓어도 경사·성토·암반이면 평탄화·옳벽에 토목비가 크게 듭니다.',
     items:[
       '경사도·진입로 경사, 성토·절토 흔적',
-      '옹벽 필요 여부, 지반·암반 상태',
+      '옳벽 필요 여부, 지반·암반 상태',
       '배수 방향·토사유출·산사태 위험지역 여부',
       '마당 조성·평탄화 비용',
     ],
@@ -278,7 +279,7 @@ function infraRelevance(key:string, purposes:Purpose[]):number{
 // 사용자가 쓴 내용에 맞는 목적만 룰엔진으로 판정하기 위함(전체 목적 무차별 표시 방지).
 const PURPOSE_KEYWORDS: Record<Purpose, string[]> = {
   house:      ['주택','집','전원주택','거주','살','단독','귀촌','귀농','전원생활','살림'],
-  farmhut:    ['농막','농사','밭','텃밭','컨테이너','농자재','농기구','경작'],
+  farmhut:    ['농막','농사','밭','턷밭','컨테이너','농자재','농기구','경작'],
   warehouse:  ['창고','물류','보관','적재','자재','임대창고','저장','물건'],
   cafe:       ['카페','커피','음식점','식당','근생','상가','펜션','숙박','민박','베이커리','디저트','영업'],
   camping:    ['캠핑','글램핑','야영','오토캠핑','카라반'],
@@ -339,6 +340,26 @@ export default function App() {
   const hasResidentialBuilding = Boolean(
     building?.hasBuilding && /(주택|주거|단독|다세대|연립|아파트|근린생활)/.test(building?.mainPurpose ?? '')
   );
+
+  // 건물이 있는 토지: 땅 일반론이 아니라 건물 중심 3경로(활용·증축·철거신축) 시나리오 산출
+  const bldScenarios = useMemo(() => {
+    if (!land?.areaSqm || !building?.hasBuilding || results.length === 0) return null;
+    const r0 = results[0];
+    return buildScenarios({
+      areaSqm: land.areaSqm,
+      bcrPct: ordinance?.rates?.bcr?.pct ?? r0.zone?.bcrMax ?? null,
+      farPct: ordinance?.rates?.far?.pct ?? r0.zone?.farMax ?? null,
+      zoneName: r0.zone?.name ?? land.primaryUseZone ?? null,
+      purposeLabel: r0.purposeLabel,
+      building: {
+        mainPurpose: building.mainPurpose ?? null,
+        totArea: building.totArea ?? null,
+        archArea: building.archArea ?? null,
+        grndFlr: building.grndFlr ?? null,
+        violation: !!building.violation,
+      },
+    });
+  }, [land, building, results, ordinance]);
 
   // 목적·건물 상태로 기반시설 항목을 동적 정렬(숨기지 않고 우선순위 재배치)
   const infraSorted = useMemo(() => {
@@ -508,14 +529,29 @@ export default function App() {
       const input=buildInput();
       const useTargets = targets.length?targets:['house' as Purpose];
       // 룰엔진 결과(사실 근거) 동봉 — 사용자가 입력한 활용에 해당하는 목적만
-      const ruleResults = useTargets.map(p=>{
-        const r=diagnose(input,p);
-        return {
-          purposeLabel:r.purposeLabel, gradeLabel:r.gradeLabel,
-          zoneName:r.zone?.name??null, bcrMax:r.zone?.bcrMax??null, farMax:r.zone?.farMax??null,
-          warnings:r.riskItems.filter(x=>x.level==='warning').map(x=>x.label),
-        };
-      });
+      const ruleRaw = useTargets.map(p=>diagnose(input,p));
+      const ruleResults = ruleRaw.map(r=>({
+        purposeLabel:r.purposeLabel, gradeLabel:r.gradeLabel,
+        zoneName:r.zone?.name??null, bcrMax:r.zone?.bcrMax??null, farMax:r.zone?.farMax??null,
+        warnings:r.riskItems.filter(x=>x.level==='warning').map(x=>x.label),
+      }));
+      // 건물 시나리오는 방금 산출한 룰 결과로 직접 계산(상태 반영 시차로 인한 누락 방지)
+      const sc = (land?.areaSqm && building?.hasBuilding)
+        ? buildScenarios({
+            areaSqm: land.areaSqm,
+            bcrPct: ordinance?.rates?.bcr?.pct ?? ruleRaw[0].zone?.bcrMax ?? null,
+            farPct: ordinance?.rates?.far?.pct ?? ruleRaw[0].zone?.farMax ?? null,
+            zoneName: ruleRaw[0].zone?.name ?? land.primaryUseZone ?? null,
+            purposeLabel: ruleRaw[0].purposeLabel,
+            building: {
+              mainPurpose: building.mainPurpose ?? null,
+              totArea: building.totArea ?? null,
+              archArea: building.archArea ?? null,
+              grndFlr: building.grndFlr ?? null,
+              violation: !!building.violation,
+            },
+          })
+        : null;
       const payload={
         land: land?{
           address:land.address, jimok:land.jimok, areaSqm:land.areaSqm, areaPyeong:land.areaPyeong,
@@ -524,10 +560,16 @@ export default function App() {
           roadSide:charact?.roadSide??null, topography:charact?.topographyHeight??null,
           landShape:charact?.topographyShape??null, landUse:charact?.landUse??null,
           hasBuilding:building?.hasBuilding??null, buildingPurpose:building?.mainPurpose??null,
+          buildingTotArea:building?.totArea??null, buildingArchArea:building?.archArea??null,
+          buildingFloors:building?.grndFlr??null, buildingUseAprDay:building?.useAprDay??null,
+          buildingViolation:building?.violation??null,
         }:null,
         purposes: useTargets.map(p=>PURPOSE_LABELS[p]),
         freeText: freeText.trim()||undefined,
         ruleResults,
+        buildingScenarios: sc
+          ? sc.scenarios.map(s=>`${s.title}: ${s.headline}. ${s.lines.join(' ')}`)
+          : undefined,
       };
       let data:any;
       if(supabaseReady && supabase){
@@ -674,7 +716,7 @@ export default function App() {
           </svg>
           <span className="brand-text">맵<span className="brand-ddang">땅</span></span>
         </div>
-        <h1>지번을 넣기 전에, 먼저 살핍니다</h1>
+        <h1>지번을 넣기 전에, 먼저 살힕니다</h1>
         <p className="sub">주소만 넣으면 용도지역·지목·면적·규제·도로 인접 여부를 자동 조회해, 활용 전 확인해야 할 위험 신호를 등급으로 보여줍니다. 확정 판정이 아닌 사전검토입니다.</p>
         <div className={`status ${supabaseReady?'on':'off'}`}>{supabaseReady?'Supabase 연결됨':'직접 호출 모드 (anon 키 미설정)'}</div>
       </header>
@@ -856,7 +898,7 @@ export default function App() {
               )}
             </span>
           </div>
-          <p className="score-lead">목적과 무관하게, <b>이 토지 자체의 조건</b>을 부동산 감정평가·투자 실무 기준으로 항목별 평가한 점수입니다. 맹지·개발제한·급경사처럼 개발을 막는 <b>치명적 결함</b>은 다른 장점으로 상쇄하지 않고 종합 점수에 상한을 씌워 보수적으로 반영합니다.</p>
+          <p className="score-lead">목적과 무관하게, <b>이 토지 자체의 조건</b>을 부동산 감정평가·투자 실무 기준으로 항목별 평가한 점수입니다. 맹지·개발제한·급경사처럼 개발을 막는 <b>치명적 결함</b>은 다른 장점으로 상쇄하지 않고 종합 점수에 상한을 씨워 보수적으로 반영합니다.</p>
           {landScore.caps.length>0 && (
             <div className="score-caps">
               <div className="score-caps-title">이 토지의 종합 점수를 끌어내린 치명적 결함</div>
@@ -909,7 +951,7 @@ export default function App() {
           <div className="field">
             <label>정밀분석 <em className="hint">원하는 활용을 적으면, 그 활용을 해석해 해당 용도의 사전검토(등급·위험·조례)를 판정하고 AI가 종합 분석합니다</em></label>
             <textarea className="freetext" value={freeText} onChange={e=>setFreeText(e.target.value)}
-              placeholder="예) 반려동물과 함께 살 단독주택과 작은 텃밭, 손님용 주차공간을 만들고 싶어요. / 창고로 임대 놓으면 어떨지 궁금해요." rows={4} />
+              placeholder="예) 반려동물과 함께 살 단독주택과 작은 턷밭, 손님용 주차공간을 만들고 싶어요. / 창고로 임대 놓으면 어떨지 궁금해요." rows={4} />
           </div>
 
           {!auth.userId ? (
@@ -969,6 +1011,24 @@ export default function App() {
               </div>
             </div>
           ))}
+        </section>
+      )}
+
+      {bldScenarios && results.length>0 && (
+        <section className="result bs-section">
+          <h3 className="result-title">기존 건물 기준 시나리오 <span className="result-sub">· {results[0].purposeLabel}</span></h3>
+          <p className="bs-lead">이 토지에는 건물이 있으므로, 땅 일반론이 아니라 건물을 기준으로 한 세 가지 경로를 수치로 비교합니다.</p>
+          {bldScenarios.scenarios.map(s=>(
+            <div key={s.key} className="bs-card">
+              <div className="bs-title">{s.title}</div>
+              <div className="bs-headline">{s.headline}</div>
+              {s.lines.map((l,i)=>(<p key={i} className="bs-line">{l}</p>))}
+              {s.cautions.length>0 && (
+                <ul className="bs-cautions">{s.cautions.map((c,i)=>(<li key={i}>{c}</li>))}</ul>
+              )}
+            </div>
+          ))}
+          {bldScenarios.notes.map((n,i)=>(<div key={i} className="bs-note">※ {n}</div>))}
         </section>
       )}
 
@@ -1046,6 +1106,8 @@ export default function App() {
             };
           })}
           freeText={freeText.trim()}
+          buildingScenarios={bldScenarios?bldScenarios.scenarios.map(s=>({key:s.key,title:s.title,headline:s.headline,lines:s.lines,cautions:s.cautions})):null}
+          buildingScenarioNotes={bldScenarios?bldScenarios.notes:[]}
           ruleResults={results.map(r=>({
             purpose:r.purpose, purposeLabel:r.purposeLabel,
             gradeLabel:r.gradeLabel, gradeDescription:r.gradeDescription,
