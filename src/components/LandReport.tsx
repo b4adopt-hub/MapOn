@@ -233,8 +233,14 @@ export default function LandReport(props: LandReportProps) {
   }, []);
 
   // 열리면 인쇄 대화상자를 띄우고, 인쇄가 끝나면(또는 취소되면) 리포트를 닫는다.
+  // 인쇄 시 앱 화면이 함께 출력되지 않도록, CSS 셀렉터에만 의존하지 않고
+  // body 직계 요소(리포트 오버레이 제외)에 숨김 클래스를 직접 부여한다.
   useEffect(() => {
     document.body.classList.add('rp-printing');
+    const others = Array.from(document.body.children).filter(
+      (el) => !el.classList.contains('rp-overlay')
+    );
+    others.forEach((el) => el.classList.add('rp-print-hide'));
     const after = () => onClose();
     window.addEventListener('afterprint', after);
     let t: number | undefined;
@@ -244,6 +250,7 @@ export default function LandReport(props: LandReportProps) {
     }
     return () => {
       document.body.classList.remove('rp-printing');
+      others.forEach((el) => el.classList.remove('rp-print-hide'));
       window.removeEventListener('afterprint', after);
       if (t) window.clearTimeout(t);
     };
