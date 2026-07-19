@@ -1,5 +1,6 @@
 /* 토지 사전검토 리포트(인쇄·PDF 저장) 전용 스타일.
-   화면에서는 전체를 덮는 오버레이로, 인쇄 시에는 리포트만 남도록 구성한다. */
+   화면에서는 전체를 덮는 오버레이로, 인쇄 시에는 리포트만 남도록 구성한다.
+   리포트는 body 직계로 포털 렌더되므로 아래 인쇄 셀렉터가 정확히 동작한다. */
 
 .rp-overlay{position:fixed;inset:0;z-index:2000;background:#f4f2ec;overflow:auto;-webkit-overflow-scrolling:touch}
 .rp-toolbar{position:sticky;top:0;z-index:5;display:flex;gap:8px;align-items:center;flex-wrap:wrap;
@@ -105,24 +106,7 @@
 .report-cta .run{width:100%}
 .report-hint{margin-top:6px;font-size:12px;color:#6b6b64;text-align:center;line-height:1.5}
 
-/* ===== 인쇄 ===== */
-@media print{
-  @page{size:A4;margin:12mm 12mm 14mm}
-  html,body{background:#fff !important}
-  /* 리포트가 열린 상태에서는 그 외 화면 요소를 모두 숨긴다 */
-  body.rp-printing > #root > *:not(.rp-overlay){display:none !important}
-  .no-print{display:none !important}
-  .rp-overlay{position:static;background:#fff;overflow:visible}
-  .rp-page{max-width:none;margin:0;padding:0;box-shadow:none;font-size:11.4pt}
-  .rp-sec{break-inside:avoid}
-  .rp-break{break-before:page}
-  .rp-rule,.rp-caps,.rp-score-group,.rp-hazard-wrap{break-inside:avoid}
-  .rp-table tr{break-inside:avoid}
-  /* 배경색·그래프 색이 인쇄에서 빠지지 않도록 강제 */
-  *{-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important}
-}
-
-/* 기반시설 10개 항목(리포트) — 화면과 동일한 내용을 전량 수록 */
+/* 기반시설 10개 항목(리포트) — 화면과 동일한 내용을 전량 펼쳐서 수록 */
 .rp-infra{border:1px solid #e2ded4;border-radius:8px;padding:10px 13px;margin:0 0 9px;background:#fff}
 .rp-infra.core{border-color:#cfe0d8;background:#fbfdfc}
 .rp-infra-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap}
@@ -143,4 +127,21 @@
 .rp-infra-list li{font-size:11.9px;color:#4a4a45;margin:1.5px 0}
 .rp-infra-note{margin-top:6px;font-size:11.6px;color:#a2761f;background:#fbf6ec;padding:5px 9px;border-radius:5px}
 .rp-infra-contact{margin-top:5px;font-size:11.3px;color:#7a7568}
-@media print{ .rp-infra{break-inside:avoid} }
+
+/* ===== 인쇄 ===== */
+@media print{
+  @page{size:A4;margin:12mm 12mm 14mm}
+  html,body{background:#fff !important}
+  /* 리포트가 열린 상태에서는 리포트 오버레이만 남기고 앱 화면 전체를 숨긴다.
+     (리포트는 body 직계로 포털 렌더되므로 이 셀렉터가 정확히 매치된다) */
+  body.rp-printing > *:not(.rp-overlay){display:none !important}
+  .no-print{display:none !important}
+  .rp-overlay{position:static;background:#fff;overflow:visible}
+  .rp-page{max-width:none;margin:0;padding:0;box-shadow:none;font-size:11.4pt}
+  .rp-sec{break-inside:avoid}
+  .rp-break{break-before:page}
+  .rp-rule,.rp-caps,.rp-score-group,.rp-hazard-wrap,.rp-infra{break-inside:avoid}
+  .rp-table tr{break-inside:avoid}
+  /* 배경색·그래프 색이 인쇄에서 빠지지 않도록 강제 */
+  *{-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important}
+}
