@@ -8,6 +8,8 @@ import { supabase, supabaseReady } from './lib/supabase';
 import { useAuth } from './lib/useAuth';
 import AuthModal from './components/AuthModal';
 import LandMap from './components/LandMap';
+import LandReport from './components/LandReport';
+import './components/LandReport.css';
 
 const GRADE_COLOR: Record<string,string> = {'가능성 높음':'#1a7f4b','조건부 검토':'#2d6cb8','전문가 확인 필요':'#b8862d','리스크 높음':'#c2622d','불가 가능성 높음':'#b83a3a'};
 const LEVEL_COLOR: Record<string,string> = {info:'#6b7280',caution:'#b8862d',warning:'#b83a3a'};
@@ -309,6 +311,10 @@ export default function App() {
   const [hazards, setHazards] = useState<NearbyHazard[]|null>(null);
   const [infraOpen, setInfraOpen] = useState<string|null>('road');
   const [showMinor, setShowMinor] = useState(false);
+  // 리포트(인쇄·PDF) — 10크레딧 차감 후 열린다
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reportErr, setReportErr] = useState<string|null>(null);
+  const [reportBusy, setReportBusy] = useState(false);
 
   const [useZoneRaw, setUseZone] = useState('계획관리지역');
   const [jimok, setJimok] = useState('대');
@@ -572,6 +578,26 @@ export default function App() {
     const targets = detectPurposes(freeText);
     runRuleCheck(targets);   // 입력한 활용의 객관 사전검토(등급·위험·조례)
     await runAI(targets);     // 그 결과를 근거로 AI가 종합 분석·재평가
+  }
+
+  // 리포트 출력: 10크레딧 차감 후 인쇄용 리포트 뷰를 연다.
+  // 조회 결과(룰엔진·AI·점수·혐오시설)를 그 시점 스냅샷으로 담는다.
+  async function openReport(){
+    if(!auth.userId){ setShowAuth(true); return; }
+    if(!land){ return; }
+    setReportErr(null); setReportBusy(true);
+    const paid = await auth.consumeCredit(10);
+    setReportBusy(false);
+    if(!paid.ok){
+      setReportErr(paid.reason==='insufficient'
+        ? '크레딧이 부족합니다. 리포트 출력에는 10크레딧이 필요합니다.'
+        : paid.reason==='auth'
+          ? '로그인이 필요합니다.'
+          : '크레딧 확인 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.');
+      if(paid.reason==='auth') setShowAuth(true);
+      return;
+    }
+    setReportOpen(true);
   }
 
   function renderInfraItem(g:InfraGroup, rel:number){
@@ -953,6 +979,76 @@ export default function App() {
           {aiText && <div className="ai-text">{aiText}</div>}
           <p className="disclaimer">{DISCLAIMER_FULL}</p>
         </section>
+      )}
+
+      {land && landScore && (
+        <section className="form report-cta">
+          {!auth.userId ? (
+            <button className="run" onClick={()=>setShowAuth(true)}>로그인하고 리포트 출력 (10크레딧)</button>
+          ) : (!auth.isAdmin && auth.credits<10) ? (
+            <button className="run" disabled>리포트 출력 10크레딧 필요 · 크레딧 부족</button>
+          ) : (
+            <button className="run" onClick={openReport} disabled={reportBusy}>
+              {reportBusy?'준비 중…':`레포트 출력하기${auth.isAdmin?'':' (10크레딧)'}`}
+            </button>
+          )}
+          <div className="report-hint">
+            토지 개요·활용성 점수 그래프·주변 혐오시설 도식·사전검토 판정·AI 분석을 한 편의 문서로 만들어
+            인쇄하거나 PDF로 저장할 수 있습니다.
+          </div>
+          {reportErr && <div className="lookup-err">{reportErr}</div>}
+        </section>
+      )}
+
+      {reportOpen && land && landScore && (
+        <LandReport
+          onClose={()=>setReportOpen(false)}
+          address={land.address}
+          pnu={land.pnu}
+          jimok={land.jimok}
+          areaSqm={land.areaSqm}
+          areaPyeong={land.areaPyeong}
+          officialPrice={land.officialPrice}
+          primaryUseZone={land.primaryUseZone}
+          useZoneNames={(land.useZones??[]).map(z=>z.name)}
+          regulations={land.regulations??[]}
+          roadSide={charact?.roadSide??null}
+          topographyHeight={charact?.topographyHeight??null}
+          topographyShape={charact?.topographyShape??null}
+          landUse={charact?.landUse??null}
+          slopePercent={slope?Number(slope):null}
+          hasBuilding={bldChecked?(building?.hasBuilding??null):null}
+          buildingPurpose={building?.mainPurpose??null}
+          buildingUseAprDay={building?.useAprDay??null}
+          buildingViolation={building?.violation??null}
+          overall={landScore.overall}
+          overallMin={landScore.overallMin}
+          overallMax={landScore.overallMax}
+          caps={landScore.caps}
+          groups={landScore.grouped.map(g=>({
+            category:g.category, label:g.label,
+            items:g.items.map(i=>({key:i.key,label:i.label,score:i.score})),
+          }))}
+          hazards={hazards ? hazards.map(h=>({
+            type:h.type, typeLabel:h.typeLabel, name:h.name??null, distanceM:h.distanceM,
+          })) : null}
+          freeText={freeText.trim()}
+          ruleResults={results.map(r=>({
+            purpose:r.purpose, purposeLabel:r.purposeLabel,
+            gradeLabel:r.gradeLabel, gradeDescription:r.gradeDescription,
+            zoneName:r.zone?.name??null,
+            bcrMax:ordinance?.rates?.bcr?.pct ?? r.zone?.bcrMax ?? null,
+            farMax:ordinance?.rates?.far?.pct ?? r.zone?.farMax ?? null,
+            riskItems:r.riskItems.map(ri=>({key:ri.key,label:ri.label,note:ri.note,level:ri.level})),
+            recommendations:r.recommendations,
+          }))}
+          ordinanceSgg={ordinance?.sggName??null}
+          ordinanceItems={(ordinance?.items??[]).map(it=>({
+            key:it.key,label:it.label,note:it.note,level:it.level,source:it.source??null,
+          }))}
+          aiText={aiText}
+          disclaimer={DISCLAIMER_FULL}
+        />
       )}
 
       <footer className="foot">맵땅 · 토지 활용 사전검토 플랫폼<br/>{DISCLAIMER_FULL}</footer>
