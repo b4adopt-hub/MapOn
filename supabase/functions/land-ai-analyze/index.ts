@@ -17,6 +17,8 @@ const CORS = {
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 const MODEL = 'claude-sonnet-4-6';
+// 한글은 토큰 소모가 커서 1024면 12문장에서 잘린다. 여유 있게 확보.
+const MAX_TOKENS = 3000;
 
 interface AnalyzeBody {
   land?: {
@@ -29,9 +31,9 @@ interface AnalyzeBody {
     useZones?: { name: string; conflict: string; isPrimary: boolean }[];
     regulations?: string[];
   } | null;
-  purposes?: string[];        // 선택된 목적 라벨(복수)
-  freeText?: string;          // 사용자 자유 입력
-  ruleResults?: {             // 룰 엔진 결과(목적별) — 사실 근거
+  purposes?: string[];
+  freeText?: string;
+  ruleResults?: {
     purposeLabel: string;
     gradeLabel: string;
     zoneName?: string | null;
@@ -84,6 +86,7 @@ function buildPrompt(b: AnalyzeBody): string {
   lines.push('3) 복수 목적이면 각각의 적합도를 간단히 비교.');
   lines.push('4) 다음 단계로 확인할 것(전문가·지자체·서류)을 1~2가지 제시.');
   lines.push('5) 한국어, 12문장 이내, 단정 금지, 사전검토 어조. 마크다운 헤더 없이 자연스러운 문단으로.');
+  lines.push('6) 반드시 마지막 문장까지 완결해서 쓰세요. 문장이 중간에 끊기지 않도록 길이를 조절하세요.');
   return lines.join('\n');
 }
 
@@ -111,7 +114,7 @@ Deno.serve(async (req: Request) => {
       },
       body: JSON.stringify({
         model: MODEL,
-        max_tokens: 1024,
+        max_tokens: MAX_TOKENS,
         messages: [{ role: 'user', content: prompt }],
       }),
     });
@@ -128,8 +131,12 @@ Deno.serve(async (req: Request) => {
       .join('\n')
       .trim();
 
+    // 토큰 한계로 잘렸으면 프론트가 알 수 있게 플래그를 넣는다.
+    const truncated = data?.stop_reason === 'max_tokens';
+
     return json(200, {
       analysis: analysis || '분석 결과를 생성하지 못했습니다.',
+      truncated,
       disclaimer: '본 AI 분석은 공공데이터 기반 사전검토 참고용이며 법적 확정 판정이 아닙니다. 인허가 가부는 지자체 조례와 현장 확인에 따라 달라질 수 있습니다.',
     });
   } catch (e) {
