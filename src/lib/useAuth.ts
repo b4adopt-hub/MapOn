@@ -72,9 +72,15 @@ export function useAuth() {
 
   const signUp = useCallback(async (email: string, password: string, displayName: string): Promise<string | null> => {
     if (!supabase) return 'Supabase 미연결';
+    // 인증 메일의 확인 링크를 "가입이 일어난 실제 도메인"으로 고정한다.
+    // 이 값을 주지 않으면 Supabase의 Site URL(기본 localhost)로 링크가 생성돼
+    // 배포 환경에서 메일 링크를 누르면 ERR_CONNECTION_REFUSED가 난다.
+    // 주의: 이 URL은 Supabase 대시보드 Authentication > URL Configuration의
+    //       Redirect URLs 화이트리스트에 등록돼 있어야 동작한다.
+    const emailRedirectTo = typeof window !== 'undefined' ? window.location.origin : undefined;
     const { error } = await supabase.auth.signUp({
       email, password,
-      options: { data: { display_name: displayName } },
+      options: { data: { display_name: displayName }, emailRedirectTo },
     });
     return error ? error.message : null;
   }, []);
