@@ -66,6 +66,14 @@ export interface ReportInfraItem {
   existing: boolean;      // 기존 건물 기준으로 본문이 교체된 항목인지
 }
 
+export interface ReportBuildingScenario {
+  key: string;
+  title: string;
+  headline: string;
+  lines: string[];
+  cautions: string[];
+}
+
 export interface ReportOrdinanceItem {
   key: string;
   label: string;
@@ -108,6 +116,8 @@ export interface LandReportProps {
 
   freeText: string;
   ruleResults: ReportRuleResult[];
+  buildingScenarios: ReportBuildingScenario[] | null;
+  buildingScenarioNotes: string[];
   ordinanceSgg: string | null;
   ordinanceItems: ReportOrdinanceItem[];
   aiText: string | null;
@@ -221,7 +231,7 @@ export default function LandReport(props: LandReportProps) {
     useZoneNames, regulations, roadSide, topographyHeight, topographyShape, landUse, slopePercent,
     hasBuilding, buildingPurpose, buildingUseAprDay, buildingViolation,
     overall, overallMin, overallMax, caps, groups,
-    hazards, infraItems, freeText, ruleResults, ordinanceSgg, ordinanceItems, aiText, disclaimer,
+    hazards, infraItems, freeText, ruleResults, buildingScenarios, buildingScenarioNotes, ordinanceSgg, ordinanceItems, aiText, disclaimer,
   } = props;
 
   const issuedAt = useMemo(() => {
@@ -469,6 +479,30 @@ export default function LandReport(props: LandReportProps) {
             <h2 className="rp-sec-title"><span className="rp-num">5</span>활용 계획 사전검토</h2>
             {freeText && (
               <p className="rp-quote">{freeText}</p>
+            )}
+            {buildingScenarios && buildingScenarios.length > 0 && (
+              <>
+                <p className="rp-lead">이 토지에는 기존 건물이 있어, 건물을 기준으로 한 세 가지 경로를 수치로 비교합니다.</p>
+                {buildingScenarios.map((s) => (
+                  <div key={s.key} className="rp-rule">
+                    <div className="rp-rule-head">
+                      <span className="rp-rule-purpose">{s.title}</span>
+                    </div>
+                    <div className="rp-rule-zone">{s.headline}</div>
+                    {s.lines.map((l, i) => (<div key={i} className="rp-rule-desc">{l}</div>))}
+                    {s.cautions.length > 0 && (
+                      <ul className="rp-risks">
+                        {s.cautions.map((c, i) => (
+                          <li key={i} className="rp-risk lv-caution">{c}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                ))}
+                {buildingScenarioNotes.map((n, i) => (
+                  <p key={i} className="rp-note">{n}</p>
+                ))}
+              </>
             )}
             {ruleResults.map((r) => (
               <div key={r.purpose} className="rp-rule">
