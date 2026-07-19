@@ -1,19 +1,17 @@
 import { useCallback, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-// 새 창(인쇄 전용 문서)에 그대로 주입하기 위해 CSS를 문자열로 가져온다.
-import reportCss from './LandReport.css?inline';
 
 /**
  * 토지 사전검토 리포트(인쇄·PDF 저장용 전용 문서).
  *
  * 동작 방식
- *  - 이 컴포넌트는 화면에 보이지 않는다. 화면 밖(off-screen)에서 렌더만 된다.
- *  - 렌더된 HTML을 새 창으로 옮겨 그 창을 인쇄한다. 앱 화면은 그 창에 존재하지 않으므로
- *    화면이 인쇄될 여지가 없다. 사용자가 보는 것은 "새 창 하나"뿐이다.
- *  - 별도 PDF 라이브러리를 쓰지 않고 브라우저 인쇄(→ "PDF로 저장")를 사용한다.
+ *  - "레포트 출력하기"를 누르면 이 리포트 화면만 전체 화면으로 표시된다(앱 화면을 덮는다).
+ *  - 자동 인쇄는 하지 않는다. 상단 "인쇄 · PDF로 저장" 버튼을 눌렀을 때만
+ *    인쇄 대화상자가 열린다(대상에서 "PDF로 저장"을 선택하면 저장).
+ *  - 인쇄 중에는 body.rp-printing으로 앱 화면을 숨겨 리포트 문서만 종이에 나간다.
+ *  - 별도 PDF 라이브러리를 쓰지 않고 브라우저 인쇄를 사용한다.
  *    한글 폰트 임베딩 문제가 없고, 텍스트가 벡터로 남아 확대해도 선명하다.
  *  - 화면에서 접혀 있는 항목(기반시설 아코디언 등)도 리포트에서는 전부 펼쳐서 수록한다.
- *  - 조작 UI(토글·입력·버튼)는 문서에 넣지 않는다. 읽는 문서로만 구성한다.
  */
 
 export interface ReportHazard {
@@ -77,8 +75,6 @@ export interface ReportOrdinanceItem {
 
 export interface LandReportProps {
   onClose: () => void;
-  /** 열리자마자 인쇄 창을 띄울지 */
-  autoPrint?: boolean;
 
   address: string | null;
   pnu: string | null;
@@ -219,7 +215,7 @@ function OverallGauge({ overall, min, max }: { overall: number; min: number | nu
 
 export default function LandReport(props: LandReportProps) {
   const {
-    onClose, autoPrint = true,
+    onClose,
     address, pnu, jimok, areaSqm, areaPyeong, officialPrice, primaryUseZone,
     useZoneNames, regulations, roadSide, topographyHeight, topographyShape, landUse, slopePercent,
     hasBuilding, buildingPurpose, buildingUseAprDay, buildingViolation,
@@ -233,49 +229,38 @@ export default function LandReport(props: LandReportProps) {
     return `${d.getFullYear()}.${p(d.getMonth() + 1)}.${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
   }, []);
 
-  // 인쇄는 "현재 창"을 인쇄하지 않는다.
-  // 리포트 문서만 담은 새 창을 열어 그 창을 인쇄한다.
+  // 인쇄: 같은 창에서 window.print()를 호출한다(새 창·팝업 차단 문제 없음 — 모바일에서 안정적).
+  // body.rp-printing이 리포트 외 앱 화면을 숨기므로 리포트 문서만 인쇄된다.
   const printDocument = useCallback(() => {
-    const page = document.querySelector('.rp-page');
-    if (!page) return;
-    const w = window.open('', '_blank');
-    if (!w) {
-      alert('팝업이 차단되어 리포트 창을 열지 못했습니다. 브라우저 주소창 옆의 팝업 차단을 해제한 뒤 다시 시도해 주세요.');
-      return;
-    }
-    w.document.open();
-    w.document.write(
-      '<!doctype html><html lang="ko"><head><meta charset="utf-8">'
-      + '<meta name="viewport" content="width=device-width,initial-scale=1">'
-      + '<title>토지 활용 사전검토 리포트</title>'
-      + '<style>' + reportCss + '</style>'
-      + '<style>body{margin:0;background:#fff}.rp-page{box-shadow:none;margin:0 auto;max-width:820px}</style>'
-      + '</head><body>' + page.outerHTML + '</body></html>'
-    );
-    w.document.close();
-    const doPrint = () => { try { w.focus(); w.print(); } catch (_e) { /* 사용자가 수동 인쇄 */ } };
-    if (w.document.readyState === 'complete') window.setTimeout(doPrint, 400);
-    else w.onload = () => window.setTimeout(doPrint, 400);
+    document.body.classList.add('rp-printing');
+    window.setTimeout(() => { window.print(); }, 30);
   }, []);
 
-  // 이 컴포넌트는 화면에 보이지 않는다(화면 밖에서 렌더만 된다).
-  // 렌더가 끝나면 그 HTML을 새 창으로 옮겨 인쇄하고, 즉시 스스로 닫힌다.
-  // 사용자가 보는 것은 "새 창 하나"뿐이다.
+  // 인쇄 대화상자가 닫히면 rp-printing을 해제하고, 리포트가 닫힐 때도 정리한다.
+  // 리포트가 떠 있는 동안 배경 앱 화면은 스크롤되지 않게 잠근다.
   useEffect(() => {
-    if (!autoPrint) return;
-    const t = window.setTimeout(() => {
-      printDocument();
-      onClose();
-    }, 220);
-    return () => window.clearTimeout(t);
-  }, [autoPrint, printDocument, onClose]);
+    const clearPrinting = () => document.body.classList.remove('rp-printing');
+    window.addEventListener('afterprint', clearPrinting);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('afterprint', clearPrinting);
+      clearPrinting();
+      document.body.style.overflow = prevOverflow;
+    };
+  }, []);
 
   const sortedHazards = hazards ? [...hazards].sort((a, b) => a.distanceM - b.distanceM) : null;
   const nearestHazard = sortedHazards && sortedHazards.length ? sortedHazards[0] : null;
 
-  // body 직계로 포털 렌더(앱 레이아웃의 영향을 받지 않게) + 화면 밖 배치
+  // body 직계로 포털 렌더(앱 레이아웃의 영향을 받지 않게). 리포트만 전체 화면으로 보인다.
   return createPortal(
-    <div className="rp-overlay rp-offscreen" aria-hidden="true">
+    <div className="rp-overlay" role="dialog" aria-label="토지 활용 사전검토 리포트">
+      <div className="rp-toolbar rp-print-hide">
+        <button type="button" className="rp-btn" onClick={printDocument}>인쇄 · PDF로 저장</button>
+        <button type="button" className="rp-btn ghost" onClick={onClose}>닫기</button>
+        <span className="rp-toolbar-hint">인쇄 창이 뜨면 대상을 <b>"PDF로 저장"</b>으로 선택하세요.</span>
+      </div>
       <article className="rp-page">
         <header className="rp-head">
           <div className="rp-brand">
